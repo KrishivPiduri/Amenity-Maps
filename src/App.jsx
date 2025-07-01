@@ -6,45 +6,48 @@ import AmenitiesDisplay from './components/AmenitiesDisplay'
 import { useGoogleMapsService } from './services/useGoogleMapsService.jsx';
 
 function App() {
+  // ===== STATE MANAGEMENT =====
   const [address, setAddress] = useState('');
   const [coords, setCoords] = useState(null);
   const [formattedAddress, setFormattedAddress] = useState('');
   const [amenities, setAmenities] = useState([]);
+
+  // Error and loading states
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
   const [amenitiesLoading, setAmenitiesLoading] = useState(false);
   const [amenitiesError, setAmenitiesError] = useState(null);
-  const { services, placesServiceDiv } = useGoogleMapsService();
 
+  // Google Maps services
+  const { services, placesServiceDiv, loading: servicesLoading, error: servicesError } = useGoogleMapsService();
+
+  // ===== EVENT HANDLERS =====
+
+  /**
+   * Handles form submission for address exploration
+   * Geocodes the address and fetches nearby amenities
+   */
   const handleSubmit = async (e) => {
     e.preventDefault();
 
+    // Validate that Google Maps services are available
     if (!services.geocoder || !services.placesService) {
-      setError('Google Maps services are not available yet.');
+      setError('Google Maps services are not available yet. Please wait and try again.');
       return;
     }
 
-    setError(null);
-    setCoords(null);
-    setFormattedAddress('');
-    setAmenities([]);
-    setAmenitiesError(null);
+    // Reset all states
+    resetStates();
     setLoading(true);
 
     try {
+      // Geocode the address to get coordinates
       const locationData = await getCoordinatesFromAddress(services.geocoder, address);
       setCoords({ lat: locationData.lat, lng: locationData.lng });
       setFormattedAddress(locationData.formattedAddress);
 
-      setAmenitiesLoading(true);
-      try {
-        const nearbyAmenities = await getNearbyAmenities(services.placesService, locationData.lat, locationData.lng);
-        setAmenities(nearbyAmenities);
-      } catch (amenitiesErr) {
-        setAmenitiesError(amenitiesErr.message);
-      } finally {
-        setAmenitiesLoading(false);
-      }
+      // Fetch nearby amenities
+      await fetchNearbyAmenities(locationData.lat, locationData.lng);
 
     } catch (error) {
       setError(error.message);
@@ -53,48 +56,107 @@ function App() {
     }
   };
 
+  /**
+   * Fetches nearby amenities for given coordinates
+   * @param {number} lat - Latitude
+   * @param {number} lng - Longitude
+   */
+  const fetchNearbyAmenities = async (lat, lng) => {
+    setAmenitiesLoading(true);
+    setAmenitiesError(null);
+
+    try {
+      const nearbyAmenities = await getNearbyAmenities(services.placesService, lat, lng);
+      setAmenities(nearbyAmenities);
+    } catch (amenitiesErr) {
+      setAmenitiesError(amenitiesErr.message);
+    } finally {
+      setAmenitiesLoading(false);
+    }
+  };
+
+  /**
+   * Resets all form and result states
+   */
+  const resetStates = () => {
+    setError(null);
+    setCoords(null);
+    setFormattedAddress('');
+    setAmenities([]);
+    setAmenitiesError(null);
+  };
+
+  // ===== RENDER HELPERS =====
+
+  /**
+   * Renders the main form section
+   */
+  const renderForm = () => (
+    <div className="bg-white p-8 rounded-lg shadow mb-6">
+      <h1 className="text-2xl font-semibold mb-6 text-center">
+        Address Explorer
+      </h1>
+
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <input
+          type="text"
+          value={address}
+          onChange={(e) => setAddress(e.target.value)}
+          placeholder="Enter an address to explore"
+          className="w-full px-4 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-400"
+          disabled={loading || servicesLoading}
+        />
+
+        <button
+          type="submit"
+          disabled={loading || servicesLoading}
+          className="w-full bg-blue-500 hover:bg-blue-600 disabled:bg-blue-300 text-white px-4 py-2 rounded font-medium transition-colors"
+        >
+          {loading ? 'Exploring...' : servicesLoading ? 'Loading Services...' : 'Explore Location'}
+        </button>
+      </form>
+
+      {/* Error Messages */}
+      {(error || servicesError) && (
+        <p className="mt-4 text-red-500">
+          {error || servicesError}
+        </p>
+      )}
+
+      {/* Location Results */}
+      <CoordinatesDisplay coords={coords} address={formattedAddress} />
+    </div>
+  );
+
+  /**
+   * Renders the amenities section
+   */
+  const renderAmenities = () => {
+    if (!coords && !amenitiesLoading && !amenitiesError) return null;
+
+    return (
+      <div className="bg-white p-8 rounded-lg shadow">
+        <AmenitiesDisplay
+          amenities={amenities}
+          loading={amenitiesLoading}
+          error={amenitiesError}
+        />
+      </div>
+    );
+  };
+
+  // ===== MAIN RENDER =====
   return (
     <div className="min-h-screen bg-gray-100 p-4">
+      {/* Hidden div required for Google Places Service */}
       {placesServiceDiv}
+
       <div className="max-w-4xl mx-auto">
-        <div className="bg-white p-8 rounded-lg shadow mb-6">
-          <h1 className="text-2xl font-semibold mb-6 text-center">
-            Address Explorer
-          </h1>
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <input
-              type="text"
-              value={address}
-              onChange={(e) => setAddress(e.target.value)}
-              placeholder="Enter an address to explore"
-              className="w-full px-4 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-400"
-            />
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full bg-blue-500 hover:bg-blue-600 disabled:bg-blue-300 text-white px-4 py-2 rounded font-medium"
-            >
-              {loading ? 'Exploring...' : 'Explore Location'}
-            </button>
-          </form>
-
-          {error && <p className="mt-4 text-red-500">{error}</p>}
-
-          <CoordinatesDisplay coords={coords} address={formattedAddress} />
-        </div>
-
-        {(coords || amenitiesLoading || amenitiesError) && (
-          <div className="bg-white p-8 rounded-lg shadow">
-            <AmenitiesDisplay
-              amenities={amenities}
-              loading={amenitiesLoading}
-              error={amenitiesError}
-            />
-          </div>
-        )}
+        {renderForm()}
+        {renderAmenities()}
       </div>
     </div>
-  )
+  );
 }
 
-export default App
+export default App;
