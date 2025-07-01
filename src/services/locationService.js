@@ -155,16 +155,17 @@ const fetchAllPlacesResults = (placesService, request) => {
 };
 
 /**
- * Fetches detailed information for a single place
+ * Fetches detailed information for a single place including coordinates
  * @param {google.maps.places.PlacesService} placesService - Places service instance
  * @param {Object} place - Basic place information from search
- * @returns {Promise<Object>} Detailed place information
+ * @returns {Promise<Object>} Detailed place information with coordinates
  */
 const fetchPlaceDetails = (placesService, place) => {
   return new Promise((resolveDetail) => {
     const detailRequest = {
       placeId: place.place_id,
-      fields: ['place_id', 'name', 'types', 'rating', 'price_level', 'vicinity', 'photos', 'user_ratings_total']
+      // Include geometry field to get coordinates
+      fields: ['place_id', 'name', 'types', 'rating', 'price_level', 'vicinity', 'photos', 'user_ratings_total', 'geometry']
     };
 
     placesService.getDetails(detailRequest, (detailResult, detailStatus) => {
@@ -177,11 +178,16 @@ const fetchPlaceDetails = (placesService, place) => {
         vicinity: place.vicinity,
         photoReference: place.photos?.[0]?.photo_reference,
         photoUrl: place.photos?.[0] ? place.photos[0].getUrl({ maxWidth: 200 }) : null,
-        user_ratings_total: place.user_ratings_total
+        user_ratings_total: place.user_ratings_total,
+        // Try to get coordinates from the basic place info (if available)
+        coordinates: place.geometry?.location ? {
+          lat: place.geometry.location.lat(),
+          lng: place.geometry.location.lng()
+        } : null
       };
 
       if (detailStatus === window.google.maps.places.PlacesServiceStatus.OK) {
-        // Use detailed information if available
+        // Use detailed information if available, including coordinates
         resolveDetail({
           ...baseInfo,
           id: detailResult.place_id,
@@ -192,7 +198,12 @@ const fetchPlaceDetails = (placesService, place) => {
           vicinity: detailResult.vicinity || baseInfo.vicinity,
           photoReference: detailResult.photos?.[0]?.photo_reference || baseInfo.photoReference,
           photoUrl: detailResult.photos?.[0] ? detailResult.photos[0].getUrl({ maxWidth: 200 }) : baseInfo.photoUrl,
-          user_ratings_total: detailResult.user_ratings_total || baseInfo.user_ratings_total
+          user_ratings_total: detailResult.user_ratings_total || baseInfo.user_ratings_total,
+          // Get coordinates from detailed result
+          coordinates: detailResult.geometry?.location ? {
+            lat: detailResult.geometry.location.lat(),
+            lng: detailResult.geometry.location.lng()
+          } : baseInfo.coordinates
         });
       } else {
         // Fallback to basic info if getDetails fails

@@ -1,7 +1,7 @@
 import { getPhotoUrl } from '../services/locationService';
 
 /**
- * Component for displaying nearby amenities with photos and details
+ * Component for displaying nearby amenities with name and coordinates only
  * @param {Array} amenities - List of amenity objects to display
  * @param {boolean} loading - Loading state for amenities
  * @param {string} error - Error message if any
@@ -32,114 +32,28 @@ const AmenitiesDisplay = ({ amenities, loading, error }) => {
   // ===== UTILITY FUNCTIONS =====
 
   /**
-   * Formats place types for display by removing generic types and formatting
-   * @param {Array} types - Array of place types from Google Places API
-   * @returns {string} Formatted types string
-   */
-  const formatTypes = (types) => {
-    return types
-      .filter(type => !type.includes('establishment') && !type.includes('point_of_interest'))
-      .map(type => type.replace(/_/g, ' '))
-      .slice(0, 3)
-      .join(', ');
-  };
-
-  /**
-   * Renders the rating badge for an amenity
-   * @param {number} rating - Rating value (1-5)
-   * @returns {JSX.Element|null} Rating badge or null if no rating
-   */
-  const renderRating = (rating) => {
-    if (!rating) return null;
-
-    return (
-      <span className="bg-green-100 text-green-800 text-xs px-2 py-1 rounded">
-        ⭐ {rating}
-      </span>
-    );
-  };
-
-  /**
-   * Renders the status indicators (open/closed, price level)
-   * @param {Object} amenity - Amenity object
-   * @returns {JSX.Element} Status indicators container
-   */
-  const renderStatusIndicators = (amenity) => (
-    <div className="flex items-center gap-3 text-xs text-gray-500">
-      {/* Open/Closed Status */}
-      {amenity.openNow !== undefined && (
-        <span className={`px-2 py-1 rounded ${
-          amenity.openNow 
-            ? 'bg-green-100 text-green-700' 
-            : 'bg-red-100 text-red-700'
-        }`}>
-          {amenity.openNow ? 'Open' : 'Closed'}
-        </span>
-      )}
-
-      {/* Price Level */}
-      {amenity.priceLevel && (
-        <span className="text-gray-600">
-          {'$'.repeat(amenity.priceLevel)}
-        </span>
-      )}
-    </div>
-  );
-
-  /**
-   * Renders the photo for an amenity
-   * @param {Object} amenity - Amenity object
-   * @returns {JSX.Element|null} Photo element or null if no photo
-   */
-  const renderPhoto = (amenity) => {
-    const photoUrl = amenity.photoUrl || getPhotoUrl(amenity.photoReference, 200);
-
-    if (!photoUrl) return null;
-
-    return (
-      <img
-        src={photoUrl}
-        alt={amenity.name}
-        className="mt-3 w-full h-32 object-cover rounded"
-        loading="lazy"
-        onError={(e) => {
-          // Hide image if it fails to load
-          e.target.style.display = 'none';
-        }}
-      />
-    );
-  };
-
-  /**
-   * Renders a single amenity card
+   * Renders a single simplified amenity card with name and coordinates
    * @param {Object} amenity - Amenity object to render
-   * @returns {JSX.Element} Amenity card
+   * @returns {JSX.Element} Simple amenity card
    */
-  const renderAmenityCard = (amenity) => (
+  const renderSimpleAmenityCard = (amenity) => (
     <div key={amenity.id} className="bg-white border rounded-lg p-4 shadow-sm hover:shadow-md transition-shadow">
-      {/* Header with name and rating */}
-      <div className="flex justify-between items-start mb-2">
-        <h4 className="font-medium text-gray-900 flex-1 mr-2">{amenity.name}</h4>
-        {renderRating(amenity.rating)}
-      </div>
+      {/* Place Name */}
+      <h4 className="font-medium text-gray-900 mb-3">{amenity.name}</h4>
 
-      {/* Types */}
-      {formatTypes(amenity.types) && (
-        <p className="text-sm text-gray-600 mb-1 capitalize">
-          {formatTypes(amenity.types)}
-        </p>
+      {/* Coordinates */}
+      {amenity.coordinates ? (
+        <div className="text-sm text-gray-600 space-y-1">
+          <p>
+            <span className="font-medium">Latitude:</span> {amenity.coordinates.lat.toFixed(6)}
+          </p>
+          <p>
+            <span className="font-medium">Longitude:</span> {amenity.coordinates.lng.toFixed(6)}
+          </p>
+        </div>
+      ) : (
+        <p className="text-sm text-gray-500 italic">Coordinates not available</p>
       )}
-
-      {/* Address */}
-      {amenity.vicinity && (
-        <p className="text-sm text-gray-500 mb-2">{amenity.vicinity}</p>
-      )}
-
-      {/* Status indicators */}
-      {renderStatusIndicators(amenity)}
-
-      {/* Photo */}
-      {renderPhoto(amenity)}
     </div>
   );
 
@@ -150,8 +64,8 @@ const AmenitiesDisplay = ({ amenities, loading, error }) => {
         Nearby Amenities ({amenities.length})
       </h3>
 
-      <div className="space-y-4 max-h-96 overflow-y-auto">
-        {amenities.map(renderAmenityCard)}
+      <div className="grid gap-4 max-h-96 overflow-y-auto">
+        {amenities.map(renderSimpleAmenityCard)}
       </div>
     </div>
   );
