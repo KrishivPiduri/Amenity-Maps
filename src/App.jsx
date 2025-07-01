@@ -3,6 +3,7 @@ import './App.css'
 import { getCoordinatesFromAddress, getNearbyAmenities } from './services/locationService'
 import CoordinatesDisplay from './components/CoordinatesDisplay'
 import AmenitiesDisplay from './components/AmenitiesDisplay'
+import { useGoogleMapsService } from './services/useGoogleMapsService';
 
 function App() {
   const [address, setAddress] = useState('');
@@ -13,37 +14,39 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [amenitiesLoading, setAmenitiesLoading] = useState(false);
   const [amenitiesError, setAmenitiesError] = useState(null);
+  const { services, placesServiceDiv } = useGoogleMapsService();
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+
+    if (!services.geocoder || !services.placesService) {
+      setError('Google Maps services are not available yet.');
+      return;
+    }
+
     setError(null);
     setCoords(null);
     setFormattedAddress('');
     setAmenities([]);
     setAmenitiesError(null);
-
     setLoading(true);
 
     try {
-      // Get coordinates from address
-      const locationData = await getCoordinatesFromAddress(address);
+      const locationData = await getCoordinatesFromAddress(services.geocoder, address);
       setCoords({ lat: locationData.lat, lng: locationData.lng });
       setFormattedAddress(locationData.formattedAddress);
 
-      // Get nearby amenities
       setAmenitiesLoading(true);
       try {
-        const nearbyAmenities = await getNearbyAmenities(locationData.lat, locationData.lng);
+        const nearbyAmenities = await getNearbyAmenities(services.placesService, locationData.lat, locationData.lng);
         setAmenities(nearbyAmenities);
       } catch (amenitiesErr) {
-        console.error('Amenities error:', amenitiesErr);
         setAmenitiesError(amenitiesErr.message);
       } finally {
         setAmenitiesLoading(false);
       }
 
     } catch (error) {
-      console.error('Location error:', error);
       setError(error.message);
     } finally {
       setLoading(false);
@@ -52,6 +55,7 @@ function App() {
 
   return (
     <div className="min-h-screen bg-gray-100 p-4">
+      {placesServiceDiv}
       <div className="max-w-4xl mx-auto">
         <div className="bg-white p-8 rounded-lg shadow mb-6">
           <h1 className="text-2xl font-semibold mb-6 text-center">
