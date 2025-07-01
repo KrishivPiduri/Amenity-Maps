@@ -70,57 +70,123 @@ export const getCoordinatesFromAddress = async (geocoder, address) => {
  */
 export const getNearbyAmenities = async (placesService, lat, lng, radius = 5000) => {
   const location = new window.google.maps.LatLng(lat, lng);
+  let allAmenities = [];
 
-  return new Promise((resolve, reject) => {
-    const request = {
-      location: location,
-      radius: radius,
-      // Use keyword to search for a variety of amenity types
-      keyword: ['bank', 'bar', 'cafe', 'hospital', 'park', 'pharmacy', 'school', 'supermarket', 'gym', 'restaurant', 'shopping_mall', 'store'].join(' | '),
-    };
+  const processPage = (results, status, pagination) => {
+    return new Promise((resolve, reject) => {
+      if (status !== window.google.maps.places.PlacesServiceStatus.OK) {
+        return reject(new Error(`Places API error: ${status}`));
+      }
 
-    placesService.nearbySearch(request, (results, status) => {
-      if (status === window.google.maps.places.PlacesServiceStatus.OK) {
-        const amenityPromises = results.map(place => {
-          return new Promise((resolveDetail) => {
-            const detailRequest = {
-              placeId: place.place_id,
-              fields: ['place_id', 'name', 'types', 'rating', 'price_level', 'vicinity', 'opening_hours', 'photos']
-            };
-            placesService.getDetails(detailRequest, (detailResult, detailStatus) => {
-              if (detailStatus === window.google.maps.places.PlacesServiceStatus.OK) {
-                resolveDetail({
-                  id: detailResult.place_id,
-                  name: detailResult.name,
-                  types: detailResult.types || [],
-                  rating: detailResult.rating,
-                  priceLevel: detailResult.price_level,
-                  vicinity: detailResult.vicinity,
-                  photoReference: detailResult.photos?.[0]?.photo_reference,
-                  photoUrl: detailResult.photos?.[0] ? detailResult.photos[0].getUrl({ maxWidth: 200 }) : null
-                });
-              } else {
-                // Fallback to basic info if getDetails fails
-                resolveDetail({
-                  id: place.place_id,
-                  name: place.name,
-                  types: place.types || [],
-                  rating: place.rating,
-                  priceLevel: place.price_level,
-                  vicinity: place.vicinity,
-                  photoReference: place.photos?.[0]?.photo_reference,
-                  photoUrl: place.photos?.[0] ? place.photos[0].getUrl({ maxWidth: 200 }) : null
-                });
-              }
-            });
+      const amenityPromises = results.map(place => {
+        return new Promise((resolveDetail) => {
+          const detailRequest = {
+            placeId: place.place_id,
+            fields: ['place_id', 'name', 'types', 'rating', 'price_level', 'vicinity', 'photos']
+          };
+          placesService.getDetails(detailRequest, (detailResult, detailStatus) => {
+            if (detailStatus === window.google.maps.places.PlacesServiceStatus.OK) {
+              resolveDetail({
+                id: detailResult.place_id,
+                name: detailResult.name,
+                types: detailResult.types || [],
+                rating: detailResult.rating,
+                priceLevel: detailResult.price_level,
+                vicinity: detailResult.vicinity,
+                photoReference: detailResult.photos?.[0]?.photo_reference,
+                photoUrl: detailResult.photos?.[0] ? detailResult.photos[0].getUrl({ maxWidth: 200 }) : null
+              });
+            } else {
+              // Fallback to basic info if getDetails fails
+              resolveDetail({
+                id: place.place_id,
+                name: place.name,
+                types: place.types || [],
+                rating: place.rating,
+                priceLevel: place.price_level,
+                vicinity: place.vicinity,
+                photoReference: place.photos?.[0]?.photo_reference,
+                photoUrl: place.photos?.[0] ? place.photos[0].getUrl({ maxWidth: 200 }) : null
+              });
+            }
           });
         });
-        Promise.all(amenityPromises).then(amenities => {
-          resolve(amenities);
-        });
-      } else {
-        reject(new Error(`Places API error: ${status}`));
+      });
+
+      Promise.all(amenityPromises).then(amenities => {
+        allAmenities = allAmenities.concat(amenities);
+        if (pagination && pagination.hasNextPage) {
+          // Adding a short delay before fetching the next page to avoid rate limiting issues
+          setTimeout(() => pagination.nextPage(), 1000);
+        } else {
+          resolve(allAmenities);
+        }
+      });
+    });
+  };
+
+  const request = {
+    location: location,
+    radius: radius,
+    keyword: ['bank', 'bar', 'cafe', 'hospital', 'park', 'pharmacy', 'school', 'supermarket', 'gym', 'restaurant', 'shopping_mall', 'store'].join(' | '),
+  };
+
+  return new Promise((resolve, reject) => {
+    placesService.nearbySearch(request, (results, status, pagination) => {
+      if (status !== window.google.maps.places.PlacesServiceStatus.OK) {
+        return reject(new Error(`Places API error: ${status}`));
       }
+
+      const processAllPages = (paginatedResults, paginatedStatus) => {
+        if (paginatedStatus !== window.google.maps.places.PlacesServiceStatus.OK) {
+          return reject(new Error(`Places API error: ${paginatedStatus}`));
+        }
+
+        allAmenities = allAmenities.concat(paginatedResults);
+
+        if (pagination.hasNextPage) {
+          setTimeout(() => pagination.nextPage(), 1000); // Wait before fetching next page
+        } else {
+          const amenityPromises = allAmenities.map(place => {
+            return new Promise((resolveDetail) => {
+              const detailRequest = {
+                placeId: place.place_id,
+                fields: ['place_id', 'name', 'types', 'rating', 'price_level', 'vicinity', 'photos']
+              };
+              placesService.getDetails(detailRequest, (detailResult, detailStatus) => {
+                if (detailStatus === window.google.maps.places.PlacesServiceStatus.OK) {
+                  resolveDetail({
+                    id: detailResult.place_id,
+                    name: detailResult.name,
+                    types: detailResult.types || [],
+                    rating: detailResult.rating,
+                    priceLevel: detailResult.price_level,
+                    vicinity: detailResult.vicinity,
+                    photoReference: detailResult.photos?.[0]?.photo_reference,
+                    photoUrl: detailResult.photos?.[0] ? detailResult.photos[0].getUrl({ maxWidth: 200 }) : null
+                  });
+                } else {
+                  resolveDetail({
+                    id: place.place_id,
+                    name: place.name,
+                    types: place.types || [],
+                    rating: place.rating,
+                    priceLevel: place.price_level,
+                    vicinity: place.vicinity,
+                    photoReference: place.photos?.[0]?.photo_reference,
+                    photoUrl: place.photos?.[0] ? place.photos[0].getUrl({ maxWidth: 200 }) : null
+                  });
+                }
+              });
+            });
+          });
+          Promise.all(amenityPromises).then(detailedAmenities => {
+            resolve(detailedAmenities);
+          });
+        }
+      };
+
+      placesService.nearbySearch(request, processAllPages);
     });
   });
 };
