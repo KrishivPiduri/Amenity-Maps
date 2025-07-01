@@ -5,45 +5,36 @@ let googleMapsLoaded = false;
 let googleMapsPromise = null;
 
 const loadGoogleMaps = () => {
-  console.log('🔄 Loading Google Maps API...');
-
   if (googleMapsLoaded && window.google) {
-    console.log('✅ Google Maps already loaded');
     return Promise.resolve(window.google);
   }
 
   if (googleMapsPromise) {
-    console.log('⏳ Google Maps loading in progress...');
     return googleMapsPromise;
   }
 
   googleMapsPromise = new Promise((resolve, reject) => {
     if (window.google) {
-      console.log('✅ Google Maps found in window');
       googleMapsLoaded = true;
       resolve(window.google);
       return;
     }
 
-    console.log('📥 Creating script tag for Google Maps API');
     const script = document.createElement('script');
     script.src = `https://maps.googleapis.com/maps/api/js?key=${API_KEY}&libraries=places`;
     script.async = true;
     script.defer = true;
 
     script.onload = () => {
-      console.log('✅ Google Maps API loaded successfully');
       googleMapsLoaded = true;
       resolve(window.google);
     };
 
-    script.onerror = (error) => {
-      console.error('❌ Failed to load Google Maps API:', error);
+    script.onerror = () => {
       reject(new Error('Failed to load Google Maps API'));
     };
 
     document.head.appendChild(script);
-    console.log('📤 Script tag added to document head');
   });
 
   return googleMapsPromise;
@@ -52,103 +43,86 @@ const loadGoogleMaps = () => {
 /**
  * Get coordinates from an address using Google Maps JavaScript SDK
  */
-export const getCoordinatesFromAddress = async (address) => {
-  console.log('🔍 Starting geocoding for address:', address);
-
-  if (!address.trim()) {
+export const getCoordinatesFromAddress = async (geocoder, address) => {
+  if (!address || !address.trim()) {
     throw new Error('Please enter a valid address.');
   }
 
-  try {
-    const google = await loadGoogleMaps();
-    console.log('✅ Google Maps loaded, creating geocoder...');
-    const geocoder = new google.maps.Geocoder();
-
-    return new Promise((resolve, reject) => {
-      console.log('🌍 Calling geocoder.geocode...');
-      geocoder.geocode({ address }, (results, status) => {
-        console.log('📍 Geocoding response - Status:', status, 'Results:', results);
-
-        if (status === 'OK' && results.length > 0) {
-          const location = results[0].geometry.location;
-          const result = {
-            lat: location.lat(),
-            lng: location.lng(),
-            formattedAddress: results[0].formatted_address
-          };
-          console.log('✅ Geocoding successful:', result);
-          resolve(result);
-        } else {
-          console.error('❌ Geocoding failed - Status:', status);
-          reject(new Error('No results found for the provided address.'));
-        }
-      });
+  return new Promise((resolve, reject) => {
+    geocoder.geocode({ address }, (results, status) => {
+      if (status === 'OK' && results.length > 0) {
+        const location = results[0].geometry.location;
+        const result = {
+          lat: location.lat(),
+          lng: location.lng(),
+          formattedAddress: results[0].formatted_address
+        };
+        resolve(result);
+      } else {
+        reject(new Error('No results found for the provided address.'));
+      }
     });
-  } catch (error) {
-    console.error('❌ Geocoding error:', error);
-    throw new Error(`Geocoding error: ${error.message}`);
-  }
+  });
 };
 
 /**
  * Get nearby amenities using Google Places JavaScript SDK
  */
-export const getNearbyAmenities = async (lat, lng, radius = 1000) => {
-  console.log('🏪 Starting places search for coordinates:', lat, lng, 'radius:', radius);
+export const getNearbyAmenities = async (placesService, lat, lng, radius = 5000) => {
+  const location = new window.google.maps.LatLng(lat, lng);
 
-  try {
-    const google = await loadGoogleMaps();
-    console.log('✅ Google Maps loaded for places search');
+  return new Promise((resolve, reject) => {
+    const request = {
+      location: location,
+      radius: radius,
+      // Use keyword to search for a variety of amenity types
+      keyword: ['bank', 'bar', 'cafe', 'hospital', 'park', 'pharmacy', 'school', 'supermarket', 'gym', 'restaurant', 'shopping_mall', 'store'].join(' | '),
+    };
 
-    // Create a proper div element and add it to the DOM temporarily
-    const serviceDiv = document.createElement('div');
-    serviceDiv.style.display = 'none';
-    document.body.appendChild(serviceDiv);
-
-    const service = new google.maps.places.PlacesService(serviceDiv);
-    const location = new google.maps.LatLng(lat, lng);
-    console.log('📍 Created LatLng object and PlacesService with proper DOM element');
-
-    return new Promise((resolve, reject) => {
-      const request = {
-        location: location,
-        radius: radius,
-        // Use a single type instead of array for better compatibility
-        type: 'restaurant'
-      };
-
-      console.log('🔍 Calling nearbySearch with request:', request);
-
-      service.nearbySearch(request, (results, status) => {
-        // Clean up the DOM element
-        document.body.removeChild(serviceDiv);
-
-        console.log('🏪 Places search response - Status:', status, 'Results count:', results?.length);
-
-        if (status === google.maps.places.PlacesServiceStatus.OK) {
-          const amenities = results.map(place => ({
-            id: place.place_id,
-            name: place.name,
-            types: place.types || [],
-            rating: place.rating,
-            priceLevel: place.price_level,
-            vicinity: place.vicinity,
-            openNow: place.opening_hours?.open_now,
-            photoReference: place.photos?.[0]?.photo_reference,
-            photoUrl: place.photos?.[0] ? place.photos[0].getUrl({ maxWidth: 200 }) : null
-          }));
-          console.log('✅ Places search successful, mapped amenities:', amenities.length);
+    placesService.nearbySearch(request, (results, status) => {
+      if (status === window.google.maps.places.PlacesServiceStatus.OK) {
+        const amenityPromises = results.map(place => {
+          return new Promise((resolveDetail) => {
+            const detailRequest = {
+              placeId: place.place_id,
+              fields: ['place_id', 'name', 'types', 'rating', 'price_level', 'vicinity', 'opening_hours', 'photos']
+            };
+            placesService.getDetails(detailRequest, (detailResult, detailStatus) => {
+              if (detailStatus === window.google.maps.places.PlacesServiceStatus.OK) {
+                resolveDetail({
+                  id: detailResult.place_id,
+                  name: detailResult.name,
+                  types: detailResult.types || [],
+                  rating: detailResult.rating,
+                  priceLevel: detailResult.price_level,
+                  vicinity: detailResult.vicinity,
+                  photoReference: detailResult.photos?.[0]?.photo_reference,
+                  photoUrl: detailResult.photos?.[0] ? detailResult.photos[0].getUrl({ maxWidth: 200 }) : null
+                });
+              } else {
+                // Fallback to basic info if getDetails fails
+                resolveDetail({
+                  id: place.place_id,
+                  name: place.name,
+                  types: place.types || [],
+                  rating: place.rating,
+                  priceLevel: place.price_level,
+                  vicinity: place.vicinity,
+                  photoReference: place.photos?.[0]?.photo_reference,
+                  photoUrl: place.photos?.[0] ? place.photos[0].getUrl({ maxWidth: 200 }) : null
+                });
+              }
+            });
+          });
+        });
+        Promise.all(amenityPromises).then(amenities => {
           resolve(amenities);
-        } else {
-          console.error('❌ Places search failed - Status:', status);
-          reject(new Error(`Places API error: ${status}`));
-        }
-      });
+        });
+      } else {
+        reject(new Error(`Places API error: ${status}`));
+      }
     });
-  } catch (error) {
-    console.error('❌ Places service error:', error);
-    throw new Error(`Places service error: ${error.message}`);
-  }
+  });
 };
 
 /**

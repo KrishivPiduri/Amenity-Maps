@@ -3,7 +3,7 @@ import './App.css'
 import { getCoordinatesFromAddress, getNearbyAmenities } from './services/locationService'
 import CoordinatesDisplay from './components/CoordinatesDisplay'
 import AmenitiesDisplay from './components/AmenitiesDisplay'
-import { useGoogleMapsService } from './services/useGoogleMapsService';
+import { useGoogleMapsService } from './services/useGoogleMapsService.jsx';
 
 function App() {
   const [address, setAddress] = useState('');
