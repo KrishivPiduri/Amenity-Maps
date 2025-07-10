@@ -11,7 +11,8 @@ const BRANDFETCH_API_KEY = 'HMHMAUXlZLFR4kLzfYjWFz4CyaQ+C5sC/ZkN+rs98+Y='; // Re
 const BRANDFETCH_BASE_URL = 'https://api.brandfetch.io/v2';
 
 // Configuration constants
-const LABEL_HEIGHT = 50;
+const LABEL_MIN_HEIGHT = 50;
+const LABEL_MAX_HEIGHT = 80;
 const LABEL_WIDTH = 180;
 const V_SPACE = 10;
 const PADDING = 20;
@@ -328,7 +329,7 @@ const MapboxMap = ({ coords, amenities = [], className = '' }) => {
 
     // Label placement function with async logo fetching and dynamic sizing
     const placeLabels = async (poiList, side) => {
-      let currentY = PADDING;
+      let currentY = 0; // Remove vertical padding constraint
       const labelPromises = [];
 
       // First pass: create all labels with placeholders and collect promises
@@ -336,38 +337,44 @@ const MapboxMap = ({ coords, amenities = [], className = '' }) => {
         // Calculate dynamic label width based on text length
         const textLength = poi.name.length;
         const dynamicWidth = Math.max(LABEL_WIDTH, Math.min(textLength * 8 + 60, 300)); // Min 180px, max 300px
+        // Calculate dynamic height - allow more height for longer text
+        const estimatedLines = Math.ceil(textLength / 20); // Rough estimate of text lines
+        const dynamicHeight = Math.max(LABEL_MIN_HEIGHT, Math.min(estimatedLines * 20 + 30, LABEL_MAX_HEIGHT));
 
         const labelX = side === 'left' ?
           PADDING :
           mapWidth - dynamicWidth - PADDING;
 
-        const labelY = Math.min(currentY, mapHeight - LABEL_HEIGHT - PADDING);
-        currentY += LABEL_HEIGHT + V_SPACE;
+        // Remove vertical padding constraint - allow labels to go to edge
+        const labelY = Math.min(currentY, mapHeight - dynamicHeight);
+        currentY += dynamicHeight + V_SPACE;
 
-        // Create label element with loading state and dynamic width
+        // Create label element with loading state and dynamic dimensions
         const label = document.createElement('div');
         label.style.cssText = `
           position: absolute;
           left: ${labelX}px;
           top: ${labelY}px;
           width: ${dynamicWidth}px;
-          height: ${LABEL_HEIGHT}px;
+          min-height: ${dynamicHeight}px;
+          max-height: ${LABEL_MAX_HEIGHT}px;
           background: white;
           border: 1px solid black;
           display: flex;
-          align-items: center;
-          padding: 5px;
+          align-items: flex-start;
+          padding: 8px;
           box-shadow: 0 2px 5px rgba(0,0,0,0.2);
           pointer-events: none;
+          box-sizing: border-box;
         `;
 
-        // Add loading placeholder
+        // Add loading placeholder with improved text styling
         label.innerHTML = `
-          <div style="display: flex; align-items: center; width: 100%;">
-            <div style="width: 35px; height: 35px; background: #f0f0f0; border-radius: 4px; margin-right: 8px; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
+          <div style="display: flex; align-items: flex-start; width: 100%; gap: 8px;">
+            <div style="width: 35px; height: 35px; background: #f0f0f0; border-radius: 4px; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
               <div style="font-size: 10px; color: #666;">⏳</div>
             </div>
-            <div style="font-size: 12px; line-height: 1.2; font-weight: 600; word-wrap: break-word; flex: 1; overflow: hidden;">
+            <div style="font-size: 12px; line-height: 1.3; font-weight: 600; word-wrap: break-word; flex: 1; overflow-wrap: break-word; hyphens: auto;">
               ${poi.name}
             </div>
           </div>
@@ -380,25 +387,25 @@ const MapboxMap = ({ coords, amenities = [], className = '' }) => {
           let logoHtml = '';
           if (displayData.type === 'brand' && displayData.logo) {
             logoHtml = `
-              <div style="display: flex; align-items: center; width: 100%;">
+              <div style="display: flex; align-items: flex-start; width: 100%; gap: 8px;">
                 <img src="${displayData.logo}" 
-                  style="height: 35px; width: auto; max-width: 60px; object-fit: contain; flex-shrink: 0; margin-right: 8px;" 
+                  style="height: 35px; width: auto; max-width: 60px; object-fit: contain; flex-shrink: 0;" 
                   alt="${poi.name} logo" 
                   crossorigin="anonymous"
                   onload="this.style.opacity='1'"
                   onerror="this.style.display='none'; this.nextElementSibling.style.display='block'"
                   >
-                <div style="display: none; font-size: 20px; margin-right: 8px; flex-shrink: 0;">${CATEGORY_ICONS[poi.types?.[0]] || CATEGORY_ICONS.default}</div>
-                <div style="font-size: 12px; line-height: 1.2; font-weight: 600; word-wrap: break-word; flex: 1; overflow: hidden;">
+                <div style="display: none; font-size: 20px; flex-shrink: 0;">${CATEGORY_ICONS[poi.types?.[0]] || CATEGORY_ICONS.default}</div>
+                <div style="font-size: 12px; line-height: 1.3; font-weight: 600; word-wrap: break-word; flex: 1; overflow-wrap: break-word; hyphens: auto;">
                   ${poi.name}
                 </div>
               </div>
             `;
           } else if (displayData.type === 'category') {
             logoHtml = `
-              <div style="display: flex; align-items: center; width: 100%;">
-                <div style="font-size: 20px; margin-right: 8px; flex-shrink: 0;">${displayData.icon}</div>
-                <div style="font-size: 12px; line-height: 1.2; font-weight: 600; word-wrap: break-word; flex: 1; overflow: hidden;">
+              <div style="display: flex; align-items: flex-start; width: 100%; gap: 8px;">
+                <div style="font-size: 20px; flex-shrink: 0;">${displayData.icon}</div>
+                <div style="font-size: 12px; line-height: 1.3; font-weight: 600; word-wrap: break-word; flex: 1; overflow-wrap: break-word; hyphens: auto;">
                   ${poi.name}
                 </div>
               </div>
@@ -411,13 +418,13 @@ const MapboxMap = ({ coords, amenities = [], className = '' }) => {
           return displayData;
         }).catch(error => {
           console.error('Error loading POI display data:', error);
-          // Fallback to category icon
+          // Fallback to category icon with improved text styling
           const primaryType = poi.types?.[0] || 'default';
           const icon = CATEGORY_ICONS[primaryType] || CATEGORY_ICONS.default;
           label.innerHTML = `
-            <div style="display: flex; align-items: center; width: 100%;">
-              <div style="font-size: 20px; margin-right: 8px; flex-shrink: 0;">${icon}</div>
-              <div style="font-size: 12px; line-height: 1.2; font-weight: 600; word-wrap: break-word; flex: 1; overflow: hidden;">
+            <div style="display: flex; align-items: flex-start; width: 100%; gap: 8px;">
+              <div style="font-size: 20px; flex-shrink: 0;">${icon}</div>
+              <div style="font-size: 12px; line-height: 1.3; font-weight: 600; word-wrap: break-word; flex: 1; overflow-wrap: break-word; hyphens: auto;">
                 ${poi.name}
               </div>
             </div>
@@ -431,7 +438,7 @@ const MapboxMap = ({ coords, amenities = [], className = '' }) => {
           from: { x: point.x, y: point.y },
           to: {
             x: side === 'left' ? labelX + dynamicWidth : labelX,
-            y: labelY + LABEL_HEIGHT / 2
+            y: labelY + dynamicHeight / 2 // Use actual dynamic height for connector
           }
         };
       }

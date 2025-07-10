@@ -1,36 +1,66 @@
 // ===== CONFIGURATION =====
 const API_KEY = "AIzaSyBnxpK2n_vnXX5CoDMN6mFk3rgJ2Mi6S24";
 
-// Configuration for amenity categories and their importance weights
-const AMENITY_CATEGORIES = {
-  restaurant: { weight: 1.2, minScore: 0 },
-  cafe: { weight: 1.0, minScore: 0 },
-  supermarket: { weight: 1.0, minScore: 0 },
-  park: { weight: 1.0, minScore: 0 },
-  bank: { weight: 0.8, minScore: 0 },
-  pharmacy: { weight: 0.8, minScore: 0 },
-  gym: { weight: 0.9, minScore: 0 },
-  shopping_mall: { weight: 1.1, minScore: 0 },
-};
+// List of well-known brand names for filtering
+const WELL_KNOWN_BRANDS = [
+  // Fast Food & Restaurants
+  'starbucks', 'mcdonald', 'subway', 'pizza hut', 'domino', 'kfc', 'burger king',
+  'taco bell', 'wendy', 'chipotle', 'panera', 'dunkin', 'tim hortons', 'popeyes',
+  'chick-fil-a', 'papa john', 'little caesars', 'dairy queen', 'arby', 'sonic',
+  'five guys', 'in-n-out', 'white castle', 'papa murphy', 'jimmy john',
 
-// List of prominent brand names for scoring algorithm
-const PROMINENT_BRANDS = [
-  'starbucks', 'mcdonald', 'subway', 'pizza hut', 'domino', 'kfc', 'burger king', 'taco bell',
+  // Banks & Financial
   'chase', 'bank of america', 'wells fargo', 'citibank', 'td bank', 'pnc bank',
-  'cvs', 'walgreens', 'rite aid', 'walmart', 'target', 'whole foods', 'trader joe',
-  'planet fitness', 'la fitness', '24 hour fitness', 'gold\'s gym',
-  'marriott', 'hilton', 'hyatt', 'best western', 'holiday inn'
+  'us bank', 'capital one', 'regions bank', 'bb&t', 'suntrust', 'fifth third',
+  'huntington bank', 'key bank', 'citizens bank', 'comerica', 'zions bank',
+
+  // Pharmacies & Healthcare
+  'cvs', 'walgreens', 'rite aid', 'walmart pharmacy', 'kroger pharmacy',
+  'kaiser permanente', 'urgent care', 'minute clinic',
+
+  // Retail & Grocery
+  'walmart', 'target', 'whole foods', 'trader joe', 'safeway', 'kroger',
+  'publix', 'albertsons', 'wegmans', 'giant', 'stop & shop', 'food lion',
+  'harris teeter', 'king soopers', 'fred meyer', 'costco', 'sam\'s club',
+  'home depot', 'lowe\'s', 'best buy', 'staples', 'office depot',
+
+  // Gas Stations
+  'shell', 'exxon', 'bp', 'chevron', 'mobil', 'texaco', 'citgo', 'sunoco',
+  'speedway', 'marathon', 'valero', 'phillips 66', '76', 'arco', 'wawa',
+  '7-eleven', 'circle k', 'casey\'s',
+
+  // Fitness & Gyms
+  'planet fitness', 'la fitness', '24 hour fitness', 'gold\'s gym', 'lifetime fitness',
+  'snap fitness', 'anytime fitness', 'crossfit', 'orange theory', 'pure barre',
+
+  // Hotels & Lodging
+  'marriott', 'hilton', 'hyatt', 'best western', 'holiday inn', 'hampton inn',
+  'comfort inn', 'quality inn', 'motel 6', 'super 8', 'days inn', 'la quinta',
+  'courtyard', 'residence inn', 'extended stay', 'homewood suites',
+
+  // Coffee & Cafes
+  'starbucks', 'dunkin', 'tim hortons', 'caribou coffee', 'peet\'s coffee',
+  'panera bread', 'einstein bros', 'bruegger\'s bagels',
+
+  // Auto Services
+  'jiffy lube', 'valvoline instant oil', 'midas', 'firestone', 'goodyear',
+  'discount tire', 'pep boys', 'autozone', 'advance auto parts', 'o\'reilly',
+
+  // Other Services
+  'fedex', 'ups', 'usps', 'dhl', 'kinko\'s', 'ups store', 'mailboxes etc',
+  'great clips', 'supercuts', 'sport clips', 'fantastic sams'
 ];
 
-// Search keywords for finding nearby amenities
+// Search keywords for finding nearby amenities - expanded to include more types
 const AMENITY_KEYWORDS = [
   'bank', 'bar', 'cafe', 'hospital', 'park', 'pharmacy',
-  'school', 'supermarket', 'gym', 'restaurant', 'shopping_mall', 'store'
+  'school', 'supermarket', 'gym', 'restaurant', 'shopping_mall', 'store',
+  'gas_station', 'atm', 'lodging', 'museum', 'library', 'post_office',
+  'movie_theater', 'beauty_salon', 'car_repair', 'dentist', 'doctor',
+  'veterinary_care', 'night_club', 'amusement_park', 'zoo', 'church'
 ];
 
-// Constants for the selection algorithm
-const MAX_SELECTED_AMENITIES = 6;
-const HIGH_PROMINENCE_THRESHOLD = 120;
+// Constants for API calls
 const PAGINATION_DELAY_MS = 200;
 
 // ===== GOOGLE MAPS API LOADING =====
@@ -206,7 +236,7 @@ const fetchPlaceDetails = (placesService, place) => {
           } : baseInfo.coordinates
         });
       } else {
-        // Fallback to basic info if getDetails fails
+        // Fallback to base info if getDetails fails
         resolveDetail(baseInfo);
       }
     });
@@ -214,12 +244,37 @@ const fetchPlaceDetails = (placesService, place) => {
 };
 
 /**
- * Main function to get nearby amenities with intelligent selection
+ * Checks if a place name matches any well-known brand
+ * @param {string} placeName - The name of the place to check
+ * @returns {boolean} True if the place name contains a well-known brand
+ */
+const isWellKnownBrand = (placeName) => {
+  if (!placeName) return false;
+
+  const normalizedName = placeName.toLowerCase();
+
+  return WELL_KNOWN_BRANDS.some(brand => {
+    // Check for exact matches and partial matches
+    return normalizedName.includes(brand.toLowerCase());
+  });
+};
+
+/**
+ * Filters amenities to keep only those with well-known brand names
+ * @param {Array} amenities - Array of amenity objects from Places API
+ * @returns {Array} Filtered array containing only well-known brands
+ */
+const filterWellKnownBrands = (amenities) => {
+  return amenities.filter(amenity => isWellKnownBrand(amenity.name));
+};
+
+/**
+ * Main function to get nearby amenities filtered by well-known brands
  * @param {google.maps.places.PlacesService} placesService - Places service instance
  * @param {number} lat - Latitude coordinate
  * @param {number} lng - Longitude coordinate
  * @param {number} radius - Search radius in meters (default: 5000)
- * @returns {Promise<Array>} Array of selected prominent amenities with details
+ * @returns {Promise<Array>} Array of well-known brand amenities with details
  */
 export const getNearbyAmenities = async (placesService, lat, lng, radius = 5000) => {
   const location = new window.google.maps.LatLng(lat, lng);
@@ -238,168 +293,19 @@ export const getNearbyAmenities = async (placesService, lat, lng, radius = 5000)
     return [];
   }
 
-  // Select the most prominent amenities using intelligent algorithm
-  const selectedAmenities = selectProminentAmenities(allAmenities);
+  // Filter to keep only well-known brands
+  const brandAmenities = filterWellKnownBrands(allAmenities);
 
-  // Fetch detailed information for selected amenities
-  const detailedAmenityPromises = selectedAmenities.map(place =>
+  if (brandAmenities.length === 0) {
+    return [];
+  }
+
+  // Fetch detailed information for brand amenities
+  const detailedAmenityPromises = brandAmenities.map(place =>
     fetchPlaceDetails(placesService, place)
   );
 
   return Promise.all(detailedAmenityPromises);
-};
-
-// ===== AMENITY SELECTION ALGORITHM =====
-
-/**
- * Calculates a prominence score for a place based on brand recognition,
- * review count, and rating quality
- * @param {Object} place - Place object from Places API
- * @returns {number} Prominence score
- */
-const calculatePlaceProminence = (place) => {
-  const name = place.name.toLowerCase();
-  let score = 0;
-
-  // High score for recognized brands/chains
-  const isBrand = PROMINENT_BRANDS.some(brand => name.includes(brand));
-  if (isBrand) {
-    score += 100;
-  }
-
-  // Score based on review count (logarithmic scale for popularity)
-  const reviews = place.user_ratings_total || 0;
-  score += Math.log10(reviews + 1) * 10;
-
-  // Bonus points for good ratings (secondary factor)
-  const rating = place.rating || 0;
-  if (rating >= 4.0) {
-    score += 10;
-  } else if (rating >= 3.5) {
-    score += 5;
-  }
-
-  return score;
-};
-
-/**
- * Finds the top-rated place in each category
- * @param {Array} scoredAmenities - Amenities with prominence scores
- * @returns {Object} Map of category -> top place in that category
- */
-const getCategoryTopPlaces = (scoredAmenities) => {
-  const categoryTops = {};
-
-  Object.keys(AMENITY_CATEGORIES).forEach(category => {
-    const placesInCategory = scoredAmenities.filter(place =>
-      place.types.includes(category)
-    );
-
-    if (placesInCategory.length > 0) {
-      // Sort by prominence and take the top one
-      placesInCategory.sort((a, b) => b.prominence - a.prominence);
-      categoryTops[category] = placesInCategory[0];
-    }
-  });
-
-  return categoryTops;
-};
-
-/**
- * Selects category representatives based on weighted prominence scores
- * @param {Object} categoryTops - Top place for each category
- * @returns {Array} Selected places representing different categories
- */
-const selectCategoryRepresentatives = (categoryTops) => {
-  // Sort categories by weighted prominence scores
-  const sortedCategories = Object.keys(categoryTops)
-    .sort((a, b) => {
-      const scoreA = categoryTops[a].prominence * AMENITY_CATEGORIES[a].weight;
-      const scoreB = categoryTops[b].prominence * AMENITY_CATEGORIES[b].weight;
-      return scoreB - scoreA;
-    });
-
-  const selected = [];
-  const selectedIds = new Set();
-  const usedCategories = new Set();
-
-  // Select top representative from each category
-  sortedCategories.forEach(category => {
-    const place = categoryTops[category];
-    if (!selectedIds.has(place.place_id) && !usedCategories.has(category)) {
-      selected.push(place);
-      selectedIds.add(place.place_id);
-      usedCategories.add(category);
-    }
-  });
-
-  return { selected, selectedIds, usedCategories };
-};
-
-/**
- * Fills remaining slots with high-prominence places if we have less than max
- * @param {Array} selected - Currently selected places
- * @param {Set} selectedIds - Set of already selected place IDs
- * @param {Set} usedCategories - Set of categories already represented
- * @param {Array} scoredAmenities - All amenities with prominence scores
- * @returns {Array} Final selection of places
- */
-const fillRemainingSlots = (selected, selectedIds, usedCategories, scoredAmenities) => {
-  if (selected.length >= MAX_SELECTED_AMENITIES) {
-    return selected;
-  }
-
-  // Sort remaining places by prominence
-  const remainingSorted = scoredAmenities
-    .filter(place => !selectedIds.has(place.place_id))
-    .sort((a, b) => b.prominence - a.prominence);
-
-  for (let i = 0; i < remainingSorted.length && selected.length < MAX_SELECTED_AMENITIES; i++) {
-    const place = remainingSorted[i];
-    const placeCategories = Object.keys(AMENITY_CATEGORIES).filter(cat =>
-      place.types.includes(cat)
-    );
-    const categoryAlreadyUsed = placeCategories.some(cat => usedCategories.has(cat));
-
-    if (!categoryAlreadyUsed) {
-      // Add if it's a new category
-      selected.push(place);
-      selectedIds.add(place.place_id);
-      placeCategories.forEach(cat => usedCategories.add(cat));
-    } else if (place.prominence > HIGH_PROMINENCE_THRESHOLD) {
-      // Add if it has exceptionally high prominence (worth showing duplicate category)
-      selected.push(place);
-      selectedIds.add(place.place_id);
-    }
-  }
-
-  return selected;
-};
-
-/**
- * Intelligently selects the most prominent and diverse amenities from a list
- * Uses a combination of brand recognition, review count, ratings, and category diversity
- * @param {Array} amenities - Raw amenities from Places API
- * @returns {Array} Selected prominent amenities (max 6)
- */
-const selectProminentAmenities = (amenities) => {
-  // Calculate prominence scores for all amenities
-  const scoredAmenities = amenities.map(place => ({
-    ...place,
-    prominence: calculatePlaceProminence(place)
-  }));
-
-  // Get the top place in each category
-  const categoryTops = getCategoryTopPlaces(scoredAmenities);
-
-  // Select category representatives
-  const { selected, selectedIds, usedCategories } = selectCategoryRepresentatives(categoryTops);
-
-  // Fill remaining slots with high-prominence places
-  const finalSelection = fillRemainingSlots(selected, selectedIds, usedCategories, scoredAmenities);
-
-  // Ensure we don't exceed the maximum
-  return finalSelection.slice(0, MAX_SELECTED_AMENITIES);
 };
 
 // ===== UTILITY FUNCTIONS =====
@@ -414,3 +320,6 @@ export const getPhotoUrl = (photoReference, maxWidth = 400) => {
   if (!photoReference) return null;
   return `https://maps.googleapis.com/maps/api/place/photo?maxwidth=${maxWidth}&photoreference=${photoReference}&key=${API_KEY}`;
 };
+
+// Export the Google Maps loader for use in components
+export { loadGoogleMaps };
