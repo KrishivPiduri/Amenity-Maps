@@ -212,11 +212,19 @@ const MapboxMap = ({ coords, amenities = [], className = '' }) => {
       style: 'mapbox://styles/mapbox/streets-v12',
       center: [coords.lng, coords.lat],
       zoom: 14,
-      preserveDrawingBuffer: true // Critical for canvas capture
+      preserveDrawingBuffer: true, // Critical for canvas capture
+      // Disable all interactions initially
+      interactive: false,
+      scrollZoom: false,
+      boxZoom: false,
+      dragRotate: false,
+      dragPan: false,
+      keyboard: false,
+      doubleClickZoom: false,
+      touchZoomRotate: false
     });
 
-    // Add navigation controls
-    map.current.addControl(new mapboxgl.NavigationControl(), 'top-right');
+    // Don't add navigation controls since we want the map frozen
 
     return () => {
       if (map.current) {
