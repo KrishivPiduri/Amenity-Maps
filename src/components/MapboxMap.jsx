@@ -226,7 +226,7 @@ const MapboxMap = ({ coords, amenities = [], className = '' }) => {
     };
   }, [coords]);
 
-  // Generate professional amenity map with labels and connector lines
+  // Generate professional map with labels and connector lines
   const generateProfessionalMap = async () => {
     if (!map.current || !amenities.length || !coords) return;
 
@@ -684,15 +684,11 @@ const MapboxMap = ({ coords, amenities = [], className = '' }) => {
     markersRef.current.forEach(marker => marker.remove());
     markersRef.current = [];
 
-    // Add center marker
+    // Remove center marker since we have overlay pin
     if (centerMarkerRef.current) {
       centerMarkerRef.current.remove();
+      centerMarkerRef.current = null;
     }
-
-    centerMarkerRef.current = new mapboxgl.Marker({ color: 'red' })
-      .setLngLat([coords.lng, coords.lat])
-      .setPopup(new mapboxgl.Popup().setHTML('<div><strong>Search Location</strong></div>'))
-      .addTo(map.current);
 
     // Generate the professional map layout
     setTimeout(() => generateProfessionalMap(), 500);
