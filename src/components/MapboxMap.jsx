@@ -6,24 +6,166 @@ import 'mapbox-gl/dist/mapbox-gl.css';
 // You'll need to add your Mapbox access token here
 const MAPBOX_TOKEN = 'pk.eyJ1IjoiZW1pci1kYW5pc2lrIiwiYSI6ImNtY25wNXN3eDA5NnYybHBwbmI1OGk5ZzYifQ.ylvc39cPbQysrVCRW_JcHA';
 
+// Brandfetch API configuration
+const BRANDFETCH_API_KEY = 'HMHMAUXlZLFR4kLzfYjWFz4CyaQ+C5sC/ZkN+rs98+Y='; // Replace with actual API key
+const BRANDFETCH_BASE_URL = 'https://api.brandfetch.io/v2';
+
 // Configuration constants
 const LABEL_HEIGHT = 50;
 const LABEL_WIDTH = 180;
 const V_SPACE = 10;
 const PADDING = 20;
 
-// Brand logo mappings for major POI brands
-const BRAND_LOGOS = {
-  'starbucks': 'https://logos-world.net/wp-content/uploads/2020/05/Starbucks-Emblem.png',
-  'mcdonalds': 'https://logos-world.net/wp-content/uploads/2020/04/McDonalds-Logo.png',
-  'subway': 'https://logos-world.net/wp-content/uploads/2020/05/Subway-Logo.png',
-  'walmart': 'https://logos-world.net/wp-content/uploads/2020/05/Walmart-Logo.png',
-  'target': 'https://logos-world.net/wp-content/uploads/2020/04/Target-Logo.png',
-  'cvs': 'https://logos-world.net/wp-content/uploads/2020/12/CVS-Logo.png',
-  'walgreens': 'https://logos-world.net/wp-content/uploads/2020/12/Walgreens-Logo.png',
-  'shell': 'https://logos-world.net/wp-content/uploads/2020/04/Shell-Logo.png',
-  'exxon': 'https://logos-world.net/wp-content/uploads/2020/06/Exxon-Mobil-Logo.png',
-  'bp': 'https://logos-world.net/wp-content/uploads/2020/06/BP-Logo.png'
+// Cache for fetched logos to avoid duplicate API calls
+const logoCache = new Map();
+
+/**
+ * Fetch brand logo from Brandfetch API
+ * @param {string} domain - The domain to fetch logo for
+ * @returns {Promise<string|null>} Logo URL or null if not found
+ */
+const fetchBrandLogo = async (domain) => {
+  // Check cache first
+  if (logoCache.has(domain)) {
+    return logoCache.get(domain);
+  }
+
+  try {
+    const response = await fetch(`${BRANDFETCH_BASE_URL}/brands/${domain}`, {
+      headers: {
+        'Authorization': `Bearer ${BRANDFETCH_API_KEY}`,
+        'Content-Type': 'application/json'
+      }
+    });
+
+    if (!response.ok) {
+      logoCache.set(domain, null);
+      return null;
+    }
+
+    const data = await response.json();
+
+    // Get the best logo (prefer icon format, then logo)
+    const logos = data.logos || [];
+    const bestLogo = logos.find(logo => logo.type === 'icon') ||
+                    logos.find(logo => logo.type === 'logo') ||
+                    logos[0];
+
+    const logoUrl = bestLogo?.formats?.find(format =>
+      format.format === 'png' || format.format === 'svg'
+    )?.src || null;
+
+    // Cache the result
+    logoCache.set(domain, logoUrl);
+    return logoUrl;
+
+  } catch (error) {
+    console.error('Error fetching logo for', domain, error);
+    logoCache.set(domain, null);
+    return null;
+  }
+};
+
+/**
+ * Extract domain from POI name for Brandfetch lookup
+ * @param {string} name - POI name
+ * @returns {string|null} Domain to lookup or null
+ */
+const extractDomainFromName = (name) => {
+  const normalizedName = name.toLowerCase().trim();
+
+  // Known brand mappings to domains
+  const brandDomains = {
+    'starbucks': 'starbucks.com',
+    'mcdonalds': 'mcdonalds.com',
+    'mcdonald\'s': 'mcdonalds.com',
+    'subway': 'subway.com',
+    'walmart': 'walmart.com',
+    'target': 'target.com',
+    'cvs': 'cvs.com',
+    'walgreens': 'walgreens.com',
+    'shell': 'shell.com',
+    'exxon': 'exxonmobil.com',
+    'mobil': 'exxonmobil.com',
+    'bp': 'bp.com',
+    'chevron': 'chevron.com',
+    'texaco': 'texaco.com',
+    'circle k': 'circlek.com',
+    '7-eleven': '7eleven.com',
+    'best buy': 'bestbuy.com',
+    'home depot': 'homedepot.com',
+    'lowes': 'lowes.com',
+    'costco': 'costco.com',
+    'sam\'s club': 'samsclub.com',
+    'kroger': 'kroger.com',
+    'safeway': 'safeway.com',
+    'whole foods': 'wholefoodsmarket.com',
+    'trader joe\'s': 'traderjoes.com',
+    'chipotle': 'chipotle.com',
+    'taco bell': 'tacobell.com',
+    'kfc': 'kfc.com',
+    'pizza hut': 'pizzahut.com',
+    'domino\'s': 'dominos.com',
+    'papa john\'s': 'papajohns.com',
+    'dunkin\'': 'dunkindonuts.com',
+    'dunkin donuts': 'dunkindonuts.com',
+    'tim hortons': 'timhortons.com',
+    'panera': 'panerabread.com',
+    'panera bread': 'panerabread.com'
+  };
+
+  // Check for exact matches first
+  if (brandDomains[normalizedName]) {
+    return brandDomains[normalizedName];
+  }
+
+  // Check for partial matches
+  for (const [brand, domain] of Object.entries(brandDomains)) {
+    if (normalizedName.includes(brand)) {
+      return domain;
+    }
+  }
+
+  return null;
+};
+
+/**
+ * Get display data for a POI (logo or icon + category) with Brandfetch integration
+ * @param {Object} poi - POI object
+ * @returns {Promise<Object>} Display data with type, logo/icon, and name
+ */
+const getPoiDisplayData = async (poi) => {
+  const name = poi.name || '';
+  const types = poi.types || [];
+
+  // Try to get brand logo from Brandfetch
+  const domain = extractDomainFromName(name);
+  if (domain) {
+    try {
+      const logoUrl = await fetchBrandLogo(domain);
+      if (logoUrl) {
+        return {
+          type: 'brand',
+          logo: logoUrl,
+          name: poi.name,
+          isAsync: true
+        };
+      }
+    } catch (error) {
+      console.error('Error fetching brand logo:', error);
+    }
+  }
+
+  // Fallback to category icons
+  const primaryType = types[0] || 'default';
+  const icon = CATEGORY_ICONS[primaryType] || CATEGORY_ICONS.default;
+
+  return {
+    type: 'category',
+    icon,
+    name: poi.name,
+    isAsync: false
+  };
 };
 
 // Category icons for fallback when no brand logo is available
@@ -45,26 +187,6 @@ const CATEGORY_ICONS = {
   'default': '📍'
 };
 
-/**
- * Get display data for a POI (logo or icon + category)
- */
-const getPoiDisplayData = (poi) => {
-  const name = poi.name?.toLowerCase() || '';
-  const types = poi.types || [];
-
-  // Check for brand logos first
-  for (const [brand, logo] of Object.entries(BRAND_LOGOS)) {
-    if (name.includes(brand)) {
-      return { type: 'brand', logo, name: poi.name };
-    }
-  }
-
-  // Fallback to category icons
-  const primaryType = types[0] || 'default';
-  const icon = CATEGORY_ICONS[primaryType] || CATEGORY_ICONS.default;
-
-  return { type: 'category', icon, name: poi.name };
-};
 
 /**
  * Professional MapboxMap component with sophisticated amenity layout and image capture
@@ -195,11 +317,13 @@ const MapboxMap = ({ coords, amenities = [], className = '' }) => {
       .filter(p => p.point.x >= mapWidth / 2)
       .sort((a, b) => a.point.y - b.point.y);
 
-    // Label placement function
-    const placeLabels = (poiList, side) => {
+    // Label placement function with async logo fetching
+    const placeLabels = async (poiList, side) => {
       let currentY = PADDING;
+      const labelPromises = [];
 
-      return poiList.map(({ poi, point }) => {
+      // First pass: create all labels with placeholders and collect promises
+      for (const { poi, point } of poiList) {
         const labelX = side === 'left' ?
           PADDING :
           mapWidth - LABEL_WIDTH - PADDING;
@@ -207,8 +331,7 @@ const MapboxMap = ({ coords, amenities = [], className = '' }) => {
         const labelY = Math.min(currentY, mapHeight - LABEL_HEIGHT - PADDING);
         currentY += LABEL_HEIGHT + V_SPACE;
 
-        // Create label element
-        const displayData = getPoiDisplayData(poi);
+        // Create label element with loading state
         const label = document.createElement('div');
         label.style.cssText = `
           position: absolute;
@@ -225,39 +348,83 @@ const MapboxMap = ({ coords, amenities = [], className = '' }) => {
           pointer-events: none;
         `;
 
-        // Generate label content
-        let logoHtml = '';
-        if (displayData.type === 'brand' && displayData.logo) {
-          logoHtml = `<img src="${displayData.logo}" 
-            style="height: 35px; width: auto; max-width: 100%; object-fit: contain;" 
-            alt="${poi.name} logo" 
-            crossorigin="anonymous">`;
-        } else if (displayData.type === 'category') {
-          logoHtml = `
-            <div style="font-size: 24px; margin-right: 8px;">${displayData.icon}</div>
+        // Add loading placeholder
+        label.innerHTML = `
+          <div style="display: flex; align-items: center;">
+            <div style="width: 35px; height: 35px; background: #f0f0f0; border-radius: 4px; margin-right: 8px; display: flex; align-items: center; justify-content: center;">
+              <div style="font-size: 10px; color: #666;">⏳</div>
+            </div>
+            <div style="font-size: 12px; line-height: 1.2; font-weight: 600; word-wrap: break-word;">
+              ${poi.name}
+            </div>
+          </div>
+        `;
+
+        overlayNode.appendChild(label);
+
+        // Create promise to update label content
+        const labelPromise = getPoiDisplayData(poi).then(displayData => {
+          let logoHtml = '';
+          if (displayData.type === 'brand' && displayData.logo) {
+            logoHtml = `<img src="${displayData.logo}" 
+              style="height: 35px; width: auto; max-width: 100%; object-fit: contain;" 
+              alt="${poi.name} logo" 
+              crossorigin="anonymous"
+              onload="this.style.opacity='1'"
+              >
+              <div style="display: none; font-size: 24px; margin-right: 8px;">${CATEGORY_ICONS[poi.types?.[0]] || CATEGORY_ICONS.default}</div>`;
+          } else if (displayData.type === 'category') {
+            logoHtml = `
+              <div style="font-size: 24px; margin-right: 8px;">${displayData.icon}</div>
+              <div style="font-size: 12px; line-height: 1.2; font-weight: 600; word-wrap: break-word;">
+                ${poi.name}
+              </div>
+            `;
+          }
+
+          // Update label content
+          label.innerHTML = logoHtml;
+
+          return displayData;
+        }).catch(error => {
+          console.error('Error loading POI display data:', error);
+          // Fallback to category icon
+          const primaryType = poi.types?.[0] || 'default';
+          const icon = CATEGORY_ICONS[primaryType] || CATEGORY_ICONS.default;
+          label.innerHTML = `
+            <div style="font-size: 24px; margin-right: 8px;">${icon}</div>
             <div style="font-size: 12px; line-height: 1.2; font-weight: 600; word-wrap: break-word;">
               ${poi.name}
             </div>
           `;
-        }
+        });
 
-        label.innerHTML = logoHtml;
-        overlayNode.appendChild(label);
+        labelPromises.push(labelPromise);
 
-        // Return connector line coordinates
-        return {
+        // Store connector line coordinates
+        labelPromises[labelPromises.length - 1].lineCoords = {
           from: { x: point.x, y: point.y },
           to: {
             x: side === 'left' ? labelX + LABEL_WIDTH : labelX,
             y: labelY + LABEL_HEIGHT / 2
           }
         };
-      });
+      }
+
+      // Wait for all logos to load or timeout after 3 seconds
+      await Promise.allSettled(labelPromises.map(p =>
+        Promise.race([p, new Promise(resolve => setTimeout(resolve, 3000))])
+      ));
+
+      // Return connector line coordinates
+      return labelPromises.map(promise => promise.lineCoords);
     };
 
-    // Place labels on both sides
-    const leftLines = placeLabels(leftPois, 'left');
-    const rightLines = placeLabels(rightPois, 'right');
+    // Place labels on both sides (now async)
+    const [leftLines, rightLines] = await Promise.all([
+      placeLabels(leftPois, 'left'),
+      placeLabels(rightPois, 'right')
+    ]);
 
     // Step 7: Draw SVG connector lines
     const svgNs = "http://www.w3.org/2000/svg";
