@@ -58,29 +58,30 @@ const MapboxMap = ({ coords, amenities = [], className = '' }) => {
     // If no amenities, just return
     if (!amenities || amenities.length === 0) return;
 
-    // Add simple blue markers for each amenity
+    // Add blue markers for each amenity
     amenities.forEach((amenity) => {
-      //if (!amenity.geometry?.location) return;
+      if (!amenity.coordinates) return;
 
-      const { lat, lng } = amenity.geometry.location;
+      const { lat, lng } = amenity.coordinates;
 
-      // Create simple popup content
-      /*const popupContent = `
+      // Create popup content for amenity
+      const popupContent = `
         <div>
           <strong>${amenity.name}</strong><br/>
-          ${amenity.types?.[0] || 'Amenity'}<br/>
+          ${amenity.type || 'Amenity'}<br/>
           ${amenity.vicinity || ''}
         </div>
-      `;*/
+      `;
 
-      //const popup = new mapboxgl.Popup().setHTML(popupContent);
+      const popup = new mapboxgl.Popup().setHTML(popupContent);
 
-      centerMarkerRef.current = new mapboxgl.Marker({ color: 'red' })
-          .setLngLat([lng, lat])
-          .setPopup(new mapboxgl.Popup().setHTML('<div><strong>Search Location</strong></div>'))
-          .addTo(map.current);
+      // Create blue marker for amenity (not red like the center marker)
+      const marker = new mapboxgl.Marker({ color: 'blue' })
+        .setLngLat([lng, lat])
+        .setPopup(popup)
+        .addTo(map.current);
 
-      //markersRef.current.push(marker);
+      markersRef.current.push(marker);
     });
 
     // Fit map to show all markers after amenities are added
@@ -92,8 +93,8 @@ const MapboxMap = ({ coords, amenities = [], className = '' }) => {
 
       // Add all amenity points
       amenities.forEach(amenity => {
-        if (amenity.geometry?.location) {
-          bounds.extend([amenity.geometry.location.lng, amenity.geometry.location.lat]);
+        if (amenity.coordinates) {
+          bounds.extend([amenity.coordinates.lng, amenity.coordinates.lat]);
         }
       });
 
