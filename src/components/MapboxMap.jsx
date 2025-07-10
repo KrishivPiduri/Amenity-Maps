@@ -98,13 +98,33 @@ const MapboxMap = ({ coords, amenities = [], className = '' }) => {
         }
       });
 
-      // Zoom out to fit all markers with padding
-      map.current.fitBounds(bounds, {
-        padding: 80,
-        maxZoom: 15
-      });
+      // Use setTimeout to ensure all markers are rendered before fitting bounds
+      setTimeout(() => {
+        map.current.fitBounds(bounds, {
+          padding: 100,
+          maxZoom: 15,
+          duration: 1000 // Smooth animation duration
+        });
+      }, 100);
     }
   }, [amenities, coords]); // This effect depends on both amenities and coords
+
+  // Update center marker position when coords change
+  useEffect(() => {
+    if (!map.current || !coords || !centerMarkerRef.current) return;
+
+    // Update center marker position
+    centerMarkerRef.current.setLngLat([coords.lng, coords.lat]);
+
+    // If no amenities, just center on the new location
+    if (!amenities || amenities.length === 0) {
+      map.current.flyTo({
+        center: [coords.lng, coords.lat],
+        zoom: 14,
+        duration: 1000
+      });
+    }
+  }, [coords, amenities]);
 
   return (
     <div className={`relative ${className}`}>
