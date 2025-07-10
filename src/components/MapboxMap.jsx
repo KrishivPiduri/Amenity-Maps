@@ -453,14 +453,17 @@ const MapboxMap = ({ coords, amenities = [], className = '' }) => {
     overlayNode.appendChild(svg);
   };
 
-  // Image capture process
+  // Image capture process - Fixed to capture both map and overlay
   const captureMapImage = async () => {
-    if (!mapContainer.current) return;
+    if (!mapContainer.current || !map.current) return;
 
     setIsGenerating(true);
 
     try {
-      // Step 1: CSS Variable Override - critical for html2canvas compatibility
+      // Step 1: Get the map canvas using Mapbox's built-in method
+      const mapCanvas = map.current.getCanvas();
+
+      // Step 2: CSS Variable Override - critical for html2canvas compatibility
       const originalStyle = document.documentElement.style.cssText;
 
       document.documentElement.style.cssText = `
@@ -485,19 +488,41 @@ const MapboxMap = ({ coords, amenities = [], className = '' }) => {
         }
       }
 
-      // Step 2: Wait for any async image loading
+      // Step 3: Wait for any async image loading
       await new Promise(r => setTimeout(r, 500));
 
-      // Step 3: Canvas generation
-      const canvas = await html2canvas(mapContainer.current, {
-        useCORS: true,
-        logging: false,
-        allowTaint: false,
-        scale: 1
-      });
+      // Step 4: Capture only the overlay elements (not the map container)
+      let overlayCanvas = null;
+      if (overlayRef.current) {
+        overlayCanvas = await html2canvas(overlayRef.current, {
+          useCORS: true,
+          logging: false,
+          allowTaint: false,
+          scale: 1,
+          backgroundColor: null, // Transparent background
+          width: mapContainer.current.clientWidth,
+          height: mapContainer.current.clientHeight
+        });
+      }
 
-      // Step 4: Convert to downloadable image
-      const imageUrl = canvas.toDataURL('image/png');
+      // Step 5: Create a composite canvas
+      const compositeCanvas = document.createElement('canvas');
+      const ctx = compositeCanvas.getContext('2d');
+
+      // Set canvas size to match map container
+      compositeCanvas.width = mapContainer.current.clientWidth;
+      compositeCanvas.height = mapContainer.current.clientHeight;
+
+      // Draw the map canvas first (background)
+      ctx.drawImage(mapCanvas, 0, 0);
+
+      // Draw the overlay canvas on top (if it exists)
+      if (overlayCanvas) {
+        ctx.drawImage(overlayCanvas, 0, 0);
+      }
+
+      // Step 6: Convert to downloadable image
+      const imageUrl = compositeCanvas.toDataURL('image/png');
       setGeneratedMapUrl(imageUrl);
 
       // Restore original styles
@@ -505,6 +530,34 @@ const MapboxMap = ({ coords, amenities = [], className = '' }) => {
 
     } catch (error) {
       console.error('Error capturing map:', error);
+
+      // Fallback: try to capture the entire container (might work in some cases)
+      try {
+        const originalStyle = document.documentElement.style.cssText;
+        document.documentElement.style.cssText = `
+          --background: #ffffff;
+          --foreground: #000000;
+          --card: #ffffff;
+          --card-foreground: #000000;
+          --primary: #000000;
+          --primary-foreground: #ffffff;
+          --border: #e5e5e5;
+          --ring: #999999;
+        `;
+
+        const fallbackCanvas = await html2canvas(mapContainer.current, {
+          useCORS: true,
+          logging: false,
+          allowTaint: false,
+          scale: 1
+        });
+
+        setGeneratedMapUrl(fallbackCanvas.toDataURL('image/png'));
+        document.documentElement.style.cssText = originalStyle;
+      } catch (fallbackError) {
+        console.error('Fallback capture also failed:', fallbackError);
+        alert('Failed to capture map. Please try again.');
+      }
     } finally {
       setIsGenerating(false);
     }
