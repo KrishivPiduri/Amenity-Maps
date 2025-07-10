@@ -3,6 +3,7 @@ import './App.css'
 import { getCoordinatesFromAddress, getNearbyAmenities } from './services/locationService'
 import CoordinatesDisplay from './components/CoordinatesDisplay'
 import AmenitiesDisplay from './components/AmenitiesDisplay'
+import MapboxMap from './components/MapboxMap'
 import { useGoogleMapsService } from './services/useGoogleMapsService.jsx';
 
 function App() {
@@ -129,18 +130,31 @@ function App() {
   );
 
   /**
-   * Renders the amenities section
+   * Renders the amenities section with map
    */
-  const renderAmenities = () => {
+  const renderAmenitiesAndMap = () => {
     if (!coords && !amenitiesLoading && !amenitiesError) return null;
 
     return (
-      <div className="bg-white p-8 rounded-lg shadow">
-        <AmenitiesDisplay
-          amenities={amenities}
-          loading={amenitiesLoading}
-          error={amenitiesError}
-        />
+      <div className="space-y-6">
+        {/* Map Section */}
+        <div className="bg-white p-6 rounded-lg shadow">
+          <h3 className="text-lg font-semibold mb-4 text-gray-800">Map View</h3>
+          <MapboxMap
+            coords={coords}
+            amenities={amenities}
+            className="w-full"
+          />
+        </div>
+
+        {/* Amenities List Section */}
+        <div className="bg-white p-8 rounded-lg shadow">
+          <AmenitiesDisplay
+            amenities={amenities}
+            loading={amenitiesLoading}
+            error={amenitiesError}
+          />
+        </div>
       </div>
     );
   };
@@ -151,9 +165,9 @@ function App() {
       {/* Hidden div required for Google Places Service */}
       {placesServiceDiv}
 
-      <div className="max-w-4xl mx-auto">
+      <div className="max-w-6xl mx-auto">
         {renderForm()}
-        {renderAmenities()}
+        {renderAmenitiesAndMap()}
       </div>
     </div>
   );
