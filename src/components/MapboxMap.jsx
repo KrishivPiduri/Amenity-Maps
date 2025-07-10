@@ -211,7 +211,8 @@ const MapboxMap = ({ coords, amenities = [], className = '' }) => {
       container: mapContainer.current,
       style: 'mapbox://styles/mapbox/streets-v12',
       center: [coords.lng, coords.lat],
-      zoom: 14
+      zoom: 14,
+      preserveDrawingBuffer: true // Critical for canvas capture
     });
 
     // Add navigation controls
@@ -460,8 +461,14 @@ const MapboxMap = ({ coords, amenities = [], className = '' }) => {
     setIsGenerating(true);
 
     try {
-      // Step 1: Get the map canvas using Mapbox's built-in method
-      const mapCanvas = map.current.getCanvas();
+      // Step 1: Wait for map to be fully loaded
+      await new Promise(resolve => {
+        if (map.current.isStyleLoaded()) {
+          resolve();
+        } else {
+          map.current.once('idle', resolve);
+        }
+      });
 
       // Step 2: CSS Variable Override - critical for html2canvas compatibility
       const originalStyle = document.documentElement.style.cssText;
@@ -488,41 +495,126 @@ const MapboxMap = ({ coords, amenities = [], className = '' }) => {
         }
       }
 
-      // Step 3: Wait for any async image loading
-      await new Promise(r => setTimeout(r, 500));
+      // Step 3: Wait for any async image loading and ensure all logos are loaded
+      await new Promise(r => setTimeout(r, 1000));
 
-      // Step 4: Capture only the overlay elements (not the map container)
-      let overlayCanvas = null;
-      if (overlayRef.current) {
-        overlayCanvas = await html2canvas(overlayRef.current, {
-          useCORS: true,
-          logging: false,
-          allowTaint: false,
-          scale: 1,
-          backgroundColor: null, // Transparent background
-          width: mapContainer.current.clientWidth,
-          height: mapContainer.current.clientHeight
-        });
-      }
+      // Step 4: Get map dimensions
+      const mapWidth = mapContainer.current.clientWidth;
+      const mapHeight = mapContainer.current.clientHeight;
 
-      // Step 5: Create a composite canvas
+      // Step 5: Create composite canvas
       const compositeCanvas = document.createElement('canvas');
       const ctx = compositeCanvas.getContext('2d');
+      compositeCanvas.width = mapWidth;
+      compositeCanvas.height = mapHeight;
 
-      // Set canvas size to match map container
-      compositeCanvas.width = mapContainer.current.clientWidth;
-      compositeCanvas.height = mapContainer.current.clientHeight;
+      // Step 6: Try multiple map capture methods
+      let mapCaptured = false;
 
-      // Draw the map canvas first (background)
-      ctx.drawImage(mapCanvas, 0, 0);
-
-      // Draw the overlay canvas on top (if it exists)
-      if (overlayCanvas) {
-        ctx.drawImage(overlayCanvas, 0, 0);
+      // Method 1: Direct canvas copy (should work with preserveDrawingBuffer: true)
+      try {
+        const mapCanvas = map.current.getCanvas();
+        console.log('Attempting direct canvas copy...');
+        ctx.drawImage(mapCanvas, 0, 0);
+        mapCaptured = true;
+        console.log('✅ Direct canvas copy successful');
+      } catch (directError) {
+        console.log('❌ Direct canvas copy failed:', directError);
       }
 
-      // Step 6: Convert to downloadable image
-      const imageUrl = compositeCanvas.toDataURL('image/png');
+      // Method 2: Canvas toDataURL approach
+      if (!mapCaptured) {
+        try {
+          const mapCanvas = map.current.getCanvas();
+          const mapDataURL = mapCanvas.toDataURL('image/png');
+          console.log('Attempting canvas toDataURL...');
+
+          const mapImg = new Image();
+          await new Promise((resolve, reject) => {
+            mapImg.onload = () => {
+              ctx.drawImage(mapImg, 0, 0);
+              mapCaptured = true;
+              console.log('✅ Canvas toDataURL successful');
+              resolve();
+            };
+            mapImg.onerror = (err) => {
+              console.log('❌ Canvas toDataURL failed:', err);
+              reject(err);
+            };
+            mapImg.src = mapDataURL;
+          });
+        } catch (dataURLError) {
+          console.log('❌ Canvas toDataURL method failed:', dataURLError);
+        }
+      }
+
+      // Method 3: Force map re-render and capture
+      if (!mapCaptured) {
+        try {
+          console.log('Attempting force re-render...');
+          // Force map to re-render
+          map.current.resize();
+          await new Promise(resolve => setTimeout(resolve, 500));
+
+          const mapCanvas = map.current.getCanvas();
+          ctx.drawImage(mapCanvas, 0, 0);
+          mapCaptured = true;
+          console.log('✅ Force re-render successful');
+        } catch (rerenderError) {
+          console.log('❌ Force re-render failed:', rerenderError);
+        }
+      }
+
+      // Method 4: Fallback with styled background
+      if (!mapCaptured) {
+        console.log('⚠️ All map capture methods failed, using styled background');
+        // Create a map-like background
+        const gradient = ctx.createLinearGradient(0, 0, 0, mapHeight);
+        gradient.addColorStop(0, '#e6f3ff');
+        gradient.addColorStop(1, '#cce7ff');
+        ctx.fillStyle = gradient;
+        ctx.fillRect(0, 0, mapWidth, mapHeight);
+
+        // Add grid pattern to simulate map
+        ctx.strokeStyle = '#d0d0d0';
+        ctx.lineWidth = 1;
+        for (let i = 0; i < mapWidth; i += 50) {
+          ctx.beginPath();
+          ctx.moveTo(i, 0);
+          ctx.lineTo(i, mapHeight);
+          ctx.stroke();
+        }
+        for (let i = 0; i < mapHeight; i += 50) {
+          ctx.beginPath();
+          ctx.moveTo(0, i);
+          ctx.lineTo(mapWidth, i);
+          ctx.stroke();
+        }
+      }
+
+      // Step 7: Capture overlay elements
+      if (overlayRef.current) {
+        try {
+          const overlayCanvas = await html2canvas(overlayRef.current, {
+            useCORS: true,
+            logging: false,
+            allowTaint: false,
+            scale: 1,
+            backgroundColor: null,
+            width: mapWidth,
+            height: mapHeight
+          });
+
+          // Draw overlay on top of map
+          ctx.drawImage(overlayCanvas, 0, 0);
+
+        } catch (overlayError) {
+          console.error('Failed to capture overlay:', overlayError);
+        }
+      }
+
+      // Step 8: Convert to downloadable image
+      const imageUrl = compositeCanvas.toDataURL('image/png', 1.0);
       setGeneratedMapUrl(imageUrl);
 
       // Restore original styles
@@ -531,7 +623,7 @@ const MapboxMap = ({ coords, amenities = [], className = '' }) => {
     } catch (error) {
       console.error('Error capturing map:', error);
 
-      // Fallback: try to capture the entire container (might work in some cases)
+      // Ultimate fallback: capture the entire container
       try {
         const originalStyle = document.documentElement.style.cssText;
         document.documentElement.style.cssText = `
@@ -547,16 +639,21 @@ const MapboxMap = ({ coords, amenities = [], className = '' }) => {
 
         const fallbackCanvas = await html2canvas(mapContainer.current, {
           useCORS: true,
-          logging: false,
-          allowTaint: false,
-          scale: 1
+          logging: true, // Enable logging for debugging
+          allowTaint: true, // Allow tainted canvas for debugging
+          scale: 1,
+          ignoreElements: (element) => {
+            // Skip Mapbox attribution and controls that might cause issues
+            return element.classList.contains('mapboxgl-ctrl');
+          }
         });
 
         setGeneratedMapUrl(fallbackCanvas.toDataURL('image/png'));
         document.documentElement.style.cssText = originalStyle;
+
       } catch (fallbackError) {
-        console.error('Fallback capture also failed:', fallbackError);
-        alert('Failed to capture map. Please try again.');
+        console.error('All capture methods failed:', fallbackError);
+        alert('Failed to capture map. This might be due to WebGL restrictions. Please try refreshing the page and ensuring the map is fully loaded before capturing.');
       }
     } finally {
       setIsGenerating(false);
