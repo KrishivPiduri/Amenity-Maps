@@ -243,6 +243,8 @@ const fetchPlaceDetails = (placesService, place) => {
   });
 };
 
+// ===== BRAND FILTERING =====
+
 /**
  * Checks if a place name matches any well-known brand
  * @param {string} placeName - The name of the place to check
@@ -260,21 +262,127 @@ const isWellKnownBrand = (placeName) => {
 };
 
 /**
- * Filters amenities to keep only those with well-known brand names
- * @param {Array} amenities - Array of amenity objects from Places API
- * @returns {Array} Filtered array containing only well-known brands
+ * Calculate prominence score based on brand recognition
+ * @param {string} placeName - The name of the place
+ * @returns {number} Prominence score (0-100)
  */
-const filterWellKnownBrands = (amenities) => {
-  return amenities.filter(amenity => isWellKnownBrand(amenity.name));
+const calculateProminenceScore = (placeName) => {
+  if (!placeName) return 0;
+
+  const normalizedName = placeName.toLowerCase();
+
+  // Check if it's a well-known brand
+  const isKnownBrand = WELL_KNOWN_BRANDS.some(brand =>
+    normalizedName.includes(brand.toLowerCase())
+  );
+
+  if (isKnownBrand) {
+    return 100; // Maximum score for well-known brands
+  }
+
+  return 0; // No score for unknown brands
 };
 
 /**
- * Main function to get nearby amenities filtered by well-known brands
+ * Calculate distance between two coordinates using Haversine formula
+ * @param {number} lat1 - Latitude of first point
+ * @param {number} lng1 - Longitude of first point
+ * @param {number} lat2 - Latitude of second point
+ * @param {number} lng2 - Longitude of second point
+ * @returns {number} Distance in meters
+ */
+const calculateDistance = (lat1, lng1, lat2, lng2) => {
+  const R = 6371e3; // Earth's radius in meters
+  const φ1 = lat1 * Math.PI/180;
+  const φ2 = lat2 * Math.PI/180;
+  const Δφ = (lat2-lat1) * Math.PI/180;
+  const Δλ = (lng2-lng1) * Math.PI/180;
+
+  const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) +
+          Math.cos(φ1) * Math.cos(φ2) *
+          Math.sin(Δλ/2) * Math.sin(Δλ/2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+
+  return R * c; // Distance in meters
+};
+
+/**
+ * Calculate proximity score based on distance from input location
+ * @param {number} distance - Distance in meters
+ * @param {number} maxDistance - Maximum search radius in meters
+ * @returns {number} Proximity score (0-100)
+ */
+const calculateProximityScore = (distance, maxDistance = 5000) => {
+  if (distance >= maxDistance) return 0;
+
+  // Linear decay: closer = higher score
+  return Math.max(0, 100 * (1 - distance / maxDistance));
+};
+
+/**
+ * Calculate overall score for a place
+ * @param {Object} place - Place object from Places API
+ * @param {number} inputLat - Input location latitude
+ * @param {number} inputLng - Input location longitude
+ * @param {number} maxDistance - Maximum search radius
+ * @returns {number} Overall score (0-200)
+ */
+const calculatePlaceScore = (place, inputLat, inputLng, maxDistance = 5000) => {
+  // Get place coordinates
+  const placeLat = place.geometry?.location?.lat() || place.coordinates?.lat;
+  const placeLng = place.geometry?.location?.lng() || place.coordinates?.lng;
+
+  if (!placeLat || !placeLng) {
+    return 0; // No score if coordinates are missing
+  }
+
+  // Calculate distance from input location
+  const distance = calculateDistance(inputLat, inputLng, placeLat, placeLng);
+
+  // Calculate component scores
+  const proximityScore = calculateProximityScore(distance, maxDistance);
+  const prominenceScore = calculateProminenceScore(place.name);
+
+  // Weighted combination: proximity (60%) + prominence (40%)
+  const totalScore = (proximityScore * 0.6) + (prominenceScore * 0.4);
+
+  return Math.round(totalScore * 100) / 100; // Round to 2 decimal places
+};
+
+/**
+ * Selects top 6 places based on combined proximity and prominence scoring
+ * @param {Array} amenities - Raw amenities from Places API
+ * @param {number} inputLat - Input location latitude
+ * @param {number} inputLng - Input location longitude
+ * @param {number} maxResults - Maximum number of results to return (default: 6)
+ * @returns {Array} Top scored amenities
+ */
+const selectTopScoredAmenities = (amenities, inputLat, inputLng, maxResults = 6) => {
+  // Calculate scores for all amenities
+  const scoredAmenities = amenities.map(place => ({
+    ...place,
+    score: calculatePlaceScore(place, inputLat, inputLng),
+    distance: place.geometry?.location ? calculateDistance(
+      inputLat,
+      inputLng,
+      place.geometry.location.lat(),
+      place.geometry.location.lng()
+    ) : null
+  }));
+
+  // Sort by score (highest first) and take top results
+  return scoredAmenities
+    .sort((a, b) => b.score - a.score)
+    .slice(0, maxResults);
+};
+
+/**
+ * Main function to get nearby amenities with score-based selection
  * @param {google.maps.places.PlacesService} placesService - Places service instance
  * @param {number} lat - Latitude coordinate
  * @param {number} lng - Longitude coordinate
  * @param {number} radius - Search radius in meters (default: 5000)
- * @returns {Promise<Array>} Array of well-known brand amenities with details
+ * @returns {Promise<Array>} Array of top 6 scored amenities with details
  */
 export const getNearbyAmenities = async (placesService, lat, lng, radius = 5000) => {
   const location = new window.google.maps.LatLng(lat, lng);
@@ -293,19 +401,26 @@ export const getNearbyAmenities = async (placesService, lat, lng, radius = 5000)
     return [];
   }
 
-  // Filter to keep only well-known brands
-  const brandAmenities = filterWellKnownBrands(allAmenities);
+  // Select top 6 based on proximity + prominence scoring
+  const topScoredAmenities = selectTopScoredAmenities(allAmenities, lat, lng, 6);
 
-  if (brandAmenities.length === 0) {
+  if (topScoredAmenities.length === 0) {
     return [];
   }
 
-  // Fetch detailed information for brand amenities
-  const detailedAmenityPromises = brandAmenities.map(place =>
+  // Fetch detailed information for top scored amenities
+  const detailedAmenityPromises = topScoredAmenities.map(place =>
     fetchPlaceDetails(placesService, place)
   );
 
-  return Promise.all(detailedAmenityPromises);
+  const detailedAmenities = await Promise.all(detailedAmenityPromises);
+
+  // Preserve the score and distance information in the final results
+  return detailedAmenities.map((detailed, index) => ({
+    ...detailed,
+    score: topScoredAmenities[index].score,
+    distance: topScoredAmenities[index].distance
+  }));
 };
 
 // ===== UTILITY FUNCTIONS =====
