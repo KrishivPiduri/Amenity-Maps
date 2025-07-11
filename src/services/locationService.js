@@ -180,7 +180,7 @@ const priority = [
 ];
 
 // Maximum number of POIs to return
-const MAX_POIS = 15;
+const MAX_POIS = 8;
 
 // Search radius reduced to 2km for higher relevance
 const DEFAULT_SEARCH_RADIUS = 2000; // 2km in meters
