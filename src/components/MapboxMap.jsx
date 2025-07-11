@@ -241,6 +241,7 @@ const CATEGORY_ICONS = {
   'park': '🌳',
   'primary_school': '🏫',
   'secondary_school': '🏫',
+  'school': '🏫',
   'atm': '🏦',
   'bank': '🏦',
   'library': '📚',
