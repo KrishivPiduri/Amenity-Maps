@@ -5,6 +5,9 @@ const API_KEY = "AIzaSyBnxpK2n_vnXX5CoDMN6mFk3rgJ2Mi6S24";
 const priority = [
   "grocery_store",
   "supermarket",
+  "grocery_or_supermarket",
+  "establishment",
+  "store",
   "pharmacy",
   "hospital",
   "doctor",
@@ -13,6 +16,7 @@ const priority = [
   "dental_clinic",
   "bank",
   "atm",
+  "finance",
   "post_office",
   "library",
   "secondary_school",
@@ -22,6 +26,9 @@ const priority = [
   "park",
   "natural_features",
   "restaurant",
+  "meal_takeaway",
+  "meal_delivery",
+  "food",
   "cafe",
   "coffee_shop",
   "bakery",
@@ -80,7 +87,6 @@ const priority = [
   "liquor_store",
   "candy_store",
   "market",
-  "book_store",
   "warehouse_store",
   "auto_parts_store",
   "car_repair",
@@ -106,7 +112,6 @@ const priority = [
   "courthouse",
   "cemetery",
   "funeral_home",
-  "post_office",
   "embassy",
   "neighborhood_police_station",
   "wellness_center",
@@ -157,8 +162,6 @@ const priority = [
   "bagel_shop",
   "confectionery",
   "buffet_restaurant",
-  "meal_delivery",
-  "meal_takeaway",
   "acai_shop",
   "juice_shop",
   "smoothie_shop",
@@ -182,7 +185,7 @@ const priority = [
 // Maximum number of POIs to return
 const MAX_POIS = 8;
 
-// Search radius reduced to 2km for higher relevance
+// Search radius - 2km for relevance
 const DEFAULT_SEARCH_RADIUS = 2000; // 2km in meters
 
 // Search keywords for broad search
@@ -374,18 +377,18 @@ const fetchPlaceDetails = (placesService, place) => {
   });
 };
 
-// ===== HIGH-IMPACT POI FILTERING =====
+// ===== SIMPLE POI SELECTION =====
 
 /**
  * Get priority score for a place based on its types
  * @param {Array} types - Place types from Google Places API
- * @returns {number} Priority score (lower number = higher priority, Infinity = not in priority list)
+ * @returns {number} Priority score (lower number = higher priority)
  */
 const getPriorityScore = (types = []) => {
-  if (!types || types.length === 0) return Infinity;
+  if (!types || types.length === 0) return 999;
 
   // Find the highest priority type (lowest index in priority array)
-  let bestPriority = Infinity;
+  let bestPriority = 999;
   for (const type of types) {
     const priorityIndex = priority.indexOf(type);
     if (priorityIndex !== -1 && priorityIndex < bestPriority) {
@@ -399,13 +402,13 @@ const getPriorityScore = (types = []) => {
 /**
  * Get the primary category for a place (the highest priority type)
  * @param {Array} types - Place types from Google Places API
- * @returns {string} Primary category or 'unknown'
+ * @returns {string} Primary category or the first type if not in priority list
  */
 const getPrimaryCategory = (types = []) => {
   if (!types || types.length === 0) return 'unknown';
 
-  let bestPriority = Infinity;
-  let primaryCategory = 'unknown';
+  let bestPriority = 999;
+  let primaryCategory = types[0] || 'unknown';
 
   for (const type of types) {
     const priorityIndex = priority.indexOf(type);
@@ -416,156 +419,6 @@ const getPrimaryCategory = (types = []) => {
   }
 
   return primaryCategory;
-};
-
-/**
- * Define hierarchical relationships between categories
- * Higher priority categories exclude lower priority ones
- */
-const CATEGORY_HIERARCHIES = {
-  'bank': ['atm'], // If bank is selected, exclude ATMs
-  'hospital': ['doctor', 'medical_lab'], // If hospital is selected, exclude individual doctors/labs
-  'university': ['school', 'primary_school', 'secondary_school'], // If university is selected, exclude other schools
-  'shopping_mall': ['department_store', 'clothing_store', 'shoe_store'], // If mall is selected, exclude individual stores
-  'supermarket': ['grocery_store', 'convenience_store'], // If supermarket is selected, exclude smaller stores
-};
-
-/**
- * Check if a category should be excluded based on already selected categories
- * @param {string} category - Category to check
- * @param {Array} selectedCategories - Already selected categories
- * @returns {boolean} True if category should be excluded
- */
-const shouldExcludeCategory = (category, selectedCategories) => {
-  // Check if any selected category hierarchically excludes this category
-  for (const selectedCategory of selectedCategories) {
-    const excludedCategories = CATEGORY_HIERARCHIES[selectedCategory];
-    if (excludedCategories && excludedCategories.includes(category)) {
-      return true;
-    }
-  }
-  return false;
-};
-
-/**
- * Selects top 8 POIs based on priority list with diversity penalty for duplicates
- * and hierarchical exclusion rules
- * @param {Array} amenities - Raw amenities from Places API
- * @param {number} inputLat - Input location latitude
- * @param {number} inputLng - Input location longitude
- * @param {number} maxResults - Maximum number of results to return (default: 8)
- * @returns {Array} Top priority POIs with diversity and hierarchy rules
- */
-const selectHighImpactPOIs = (amenities, inputLat, inputLng, maxResults = MAX_POIS) => {
-  // Process all amenities and assign priority scores
-  const processedAmenities = amenities
-    .map(place => {
-      const priorityScore = getPriorityScore(place.types);
-
-      // Skip places not in priority list
-      if (priorityScore === Infinity) return null;
-
-      return {
-        ...place,
-        priorityScore,
-        primaryCategory: getPrimaryCategory(place.types),
-        distance: place.geometry?.location ? calculateDistance(
-          inputLat,
-          inputLng,
-          place.geometry.location.lat(),
-          place.geometry.location.lng()
-        ) : null
-      };
-    })
-    .filter(place => place !== null); // Remove places not in priority list
-
-  if (processedAmenities.length === 0) {
-    return [];
-  }
-
-  // Sort by priority first (lower priorityScore = higher priority)
-  const sortedAmenities = processedAmenities.sort((a, b) => {
-    if (a.priorityScore !== b.priorityScore) {
-      return a.priorityScore - b.priorityScore;
-    }
-    // Same priority, sort by distance
-    if (a.distance && b.distance) {
-      return a.distance - b.distance;
-    }
-    return 0;
-  });
-
-  // Smart selection with diversity penalty and hierarchical exclusion
-  const selectedPOIs = [];
-  const categoryCount = {}; // Track how many of each category we've selected
-  const selectedCategories = []; // Track which categories have been selected
-
-  for (const place of sortedAmenities) {
-    if (selectedPOIs.length >= maxResults) break;
-
-    const category = place.primaryCategory;
-    const currentCount = categoryCount[category] || 0;
-
-    // Check if this category should be excluded due to hierarchy rules
-    if (shouldExcludeCategory(category, selectedCategories)) {
-      console.log(`🚫 Excluding ${place.name} (${category}) due to hierarchy rules`);
-      continue;
-    }
-
-    // Calculate diversity penalty
-    // First of a category: no penalty
-    // Second of a category: moderate penalty (effective priority score * 1.5)
-    // Third of a category: heavy penalty (effective priority score * 3)
-    // Fourth+ of a category: severe penalty (effective priority score * 5)
-    let diversityPenalty = 1;
-    if (currentCount >= 3) {
-      diversityPenalty = 5; // Severe penalty for 4th+ duplicate
-    } else if (currentCount === 2) {
-      diversityPenalty = 3; // Heavy penalty for 3rd duplicate
-    } else if (currentCount === 1) {
-      diversityPenalty = 1.5; // Moderate penalty for 2nd duplicate
-    }
-
-    const adjustedPriorityScore = place.priorityScore * diversityPenalty;
-
-    // Check if this place should be included based on diversity
-    let shouldInclude = true;
-
-    // If we have room, always include the first of any category
-    if (currentCount === 0) {
-      shouldInclude = true;
-    } else {
-      // For duplicates, check if the adjusted priority is still competitive
-      // Compare against the worst currently selected item
-      if (selectedPOIs.length > 0) {
-        const worstSelected = selectedPOIs[selectedPOIs.length - 1];
-        const worstAdjustedScore = worstSelected.priorityScore * (categoryCount[worstSelected.primaryCategory] > 1 ? 1.5 : 1);
-
-        // Only include if this duplicate is significantly better than the worst selected
-        if (adjustedPriorityScore > worstAdjustedScore * 1.2) {
-          shouldInclude = false;
-        }
-      }
-    }
-
-    if (shouldInclude) {
-      selectedPOIs.push({
-        ...place,
-        adjustedPriorityScore,
-        diversityPenalty
-      });
-      categoryCount[category] = currentCount + 1;
-
-      // Add to selected categories list (only first time)
-      if (currentCount === 0) {
-        selectedCategories.push(category);
-      }
-
-      console.log(`✅ Selected ${place.name} (${category}) - Priority: ${place.priorityScore}, Adjusted: ${adjustedPriorityScore.toFixed(1)}`);
-    }
-  }
-
-  return selectedPOIs;
 };
 
 /**
@@ -592,17 +445,72 @@ const calculateDistance = (lat1, lng1, lat2, lng2) => {
 };
 
 /**
- * Main function to get high-impact nearby amenities
+ * Simple selection of top POIs based on priority list
+ * @param {Array} amenities - Raw amenities from Places API
+ * @param {number} inputLat - Input location latitude
+ * @param {number} inputLng - Input location longitude
+ * @param {number} maxResults - Maximum number of results to return (default: 8)
+ * @returns {Array} Top priority POIs
+ */
+const selectHighImpactPOIs = (amenities, inputLat, inputLng, maxResults = MAX_POIS) => {
+  console.log(`🔍 Starting simple selection from ${amenities.length} total places`);
+
+  // Process all amenities and assign priority scores
+  const processedAmenities = amenities.map((place, index) => {
+    const priorityScore = getPriorityScore(place.types);
+    const primaryCategory = getPrimaryCategory(place.types);
+
+    const distance = place.geometry?.location ? calculateDistance(
+      inputLat,
+      inputLng,
+      place.geometry.location.lat(),
+      place.geometry.location.lng()
+    ) : null;
+
+    return {
+      ...place,
+      priorityScore,
+      primaryCategory,
+      distance
+    };
+  });
+
+  // Sort by priority (lower score = higher priority), then by distance
+  const sortedAmenities = processedAmenities.sort((a, b) => {
+    if (a.priorityScore !== b.priorityScore) {
+      return a.priorityScore - b.priorityScore;
+    }
+    // Same priority, sort by distance
+    if (a.distance && b.distance) {
+      return a.distance - b.distance;
+    }
+    return 0;
+  });
+
+  // Take the top N results
+  const selectedPOIs = sortedAmenities.slice(0, maxResults);
+
+  console.log(`🎉 Selected ${selectedPOIs.length} places:`);
+  selectedPOIs.forEach((place, idx) => {
+    const priorityLabel = place.priorityScore === 999 ? 'LOW PRIORITY' : `Priority ${place.priorityScore}`;
+    console.log(`   ${idx + 1}. ${place.name} (${place.primaryCategory}) - ${priorityLabel}`);
+  });
+
+  return selectedPOIs;
+};
+
+/**
+ * Main function to get nearby amenities
  * @param {google.maps.places.PlacesService} placesService - Places service instance
  * @param {number} lat - Latitude coordinate
  * @param {number} lng - Longitude coordinate
  * @param {number} radius - Search radius in meters (default: 2000)
- * @returns {Promise<Array>} Array of top 8 high-impact amenities with details
+ * @returns {Promise<Array>} Array of top 8 amenities with details
  */
 export const getNearbyAmenities = async (placesService, lat, lng, radius = DEFAULT_SEARCH_RADIUS) => {
   const location = new window.google.maps.LatLng(lat, lng);
 
-  // Configure search request for high-impact categories
+  // Configure search request
   const request = {
     location: location,
     radius: radius,
@@ -616,27 +524,26 @@ export const getNearbyAmenities = async (placesService, lat, lng, radius = DEFAU
     return [];
   }
 
-  // Select top 8 high-impact POIs
-  const topHighImpactPOIs = selectHighImpactPOIs(allAmenities, lat, lng, MAX_POIS);
+  // Select top POIs
+  const topPOIs = selectHighImpactPOIs(allAmenities, lat, lng, MAX_POIS);
 
-  if (topHighImpactPOIs.length === 0) {
+  if (topPOIs.length === 0) {
     return [];
   }
 
   // Fetch detailed information for selected POIs
-  const detailedPOIPromises = topHighImpactPOIs.map(place =>
+  const detailedPOIPromises = topPOIs.map(place =>
     fetchPlaceDetails(placesService, place)
   );
 
   const detailedPOIs = await Promise.all(detailedPOIPromises);
 
-  // Preserve the score, distance, and category information in the final results
+  // Return the detailed POIs
   return detailedPOIs.map((detailed, index) => ({
     ...detailed,
-    score: topHighImpactPOIs[index].score,
-    distance: topHighImpactPOIs[index].distance,
-    highImpactCategory: topHighImpactPOIs[index].highImpactCategory,
-    priority: topHighImpactPOIs[index].priority
+    score: topPOIs[index].score,
+    distance: topPOIs[index].distance,
+    priority: topPOIs[index].priority
   }));
 };
 
