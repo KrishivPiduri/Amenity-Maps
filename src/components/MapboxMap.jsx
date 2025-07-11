@@ -22,7 +22,7 @@ const PADDING = 20;
 const logoCache = new Map();
 
 /**
- * Fetch brand logo from Brandfetch API
+ * Fetch brand logo with multiple fallback methods
  * @param {string} domain - The domain to fetch logo for
  * @returns {Promise<string|null>} Logo URL or null if not found
  */
@@ -36,62 +36,161 @@ const fetchBrandLogo = async (domain) => {
     return cachedResult;
   }
 
+  // Method 1: Static logo mapping for major brands (highest priority)
+  const staticLogos = getStaticLogoMapping();
+  if (staticLogos[domain]) {
+    console.log(`✅ Using static logo mapping for ${domain}`);
+    logoCache.set(domain, staticLogos[domain]);
+    return staticLogos[domain];
+  }
+
+  // Method 2: Try Clearbit Logo API (free, no auth needed)
+  try {
+    console.log(`🔄 Trying Clearbit Logo API for: ${domain}`);
+    const clearbitUrl = `https://logo.clearbit.com/${domain}`;
+
+    // Test if the logo exists by creating an image element
+    const logoExists = await new Promise((resolve) => {
+      const img = new Image();
+      img.onload = () => {
+        console.log(`✅ Clearbit logo found for ${domain}`);
+        resolve(true);
+      };
+      img.onerror = () => {
+        console.log(`❌ Clearbit logo not found for ${domain}`);
+        resolve(false);
+      };
+      img.src = clearbitUrl;
+
+      // Timeout after 2 seconds
+      setTimeout(() => {
+        console.log(`⏰ Clearbit logo test timeout for ${domain}`);
+        resolve(false);
+      }, 2000);
+    });
+
+    if (logoExists) {
+      logoCache.set(domain, clearbitUrl);
+      return clearbitUrl;
+    }
+  } catch (error) {
+    console.error(`💥 Clearbit API error for ${domain}:`, error.message);
+  }
+
+  // Method 3: Try Google Favicon API
+  try {
+    console.log(`🔄 Trying Google Favicon API for: ${domain}`);
+    const faviconUrl = `https://www.google.com/s2/favicons?sz=64&domain=${domain}`;
+
+    // Google's favicon API usually works, so we'll use it as a backup
+    console.log(`✅ Using Google Favicon for ${domain}: ${faviconUrl}`);
+    logoCache.set(domain, faviconUrl);
+    return faviconUrl;
+  } catch (error) {
+    console.error(`💥 Google Favicon API error for ${domain}:`, error.message);
+  }
+
+  // Method 4: Try Brandfetch API (lowest priority due to CORS issues)
   try {
     console.log(`📡 Making API request to Brandfetch for: ${domain}`);
+
+    const headers = {
+      'Authorization': `Bearer ${BRANDFETCH_API_KEY}`,
+      'Content-Type': 'application/json',
+      'Accept': 'application/json'
+    };
+
     const response = await fetch(`${BRANDFETCH_BASE_URL}/brands/${domain}`, {
-      headers: {
-        'Authorization': `Bearer ${BRANDFETCH_API_KEY}`,
-        'Content-Type': 'application/json'
-      }
+      method: 'GET',
+      headers: headers,
+      mode: 'cors'
     });
 
     console.log(`📊 Brandfetch API response status: ${response.status} ${response.statusText}`);
 
-    if (!response.ok) {
-      console.log(`❌ Brandfetch API failed for ${domain}: ${response.status} ${response.statusText}`);
-      logoCache.set(domain, null);
-      return null;
+    if (response.ok) {
+      const data = await response.json();
+      console.log(`📦 Brandfetch API response data for ${domain}:`, data);
+      const logoUrl = extractLogoFromData(data, domain);
+      if (logoUrl) {
+        logoCache.set(domain, logoUrl);
+        return logoUrl;
+      }
     }
-
-    const data = await response.json();
-    console.log(`📦 Brandfetch API response data for ${domain}:`, data);
-
-    // Get the best logo (prefer icon format, then logo)
-    const logos = data.logos || [];
-    console.log(`🎨 Found ${logos.length} logos for ${domain}:`, logos.map(l => ({ type: l.type, formats: l.formats?.length || 0 })));
-
-    const bestLogo = logos.find(logo => logo.type === 'icon') ||
-                    logos.find(logo => logo.type === 'logo') ||
-                    logos[0];
-
-    if (!bestLogo) {
-      console.log(`❌ No usable logo found for ${domain}`);
-      logoCache.set(domain, null);
-      return null;
-    }
-
-    console.log(`🎯 Selected logo for ${domain}:`, { type: bestLogo.type, formats: bestLogo.formats?.length || 0 });
-
-    const logoUrl = bestLogo?.formats?.find(format =>
-      format.format === 'png' || format.format === 'svg' || format.format === 'jpeg' || format.format === 'webp'
-    )?.src || null;
-
-    if (logoUrl) {
-      console.log(`✅ Logo URL found for ${domain}: ${logoUrl}`);
-    } else {
-      console.log(`❌ No supported format (PNG/SVG/JPEG/WebP) found for ${domain}`);
-      console.log(`Available formats:`, bestLogo?.formats?.map(f => f.format));
-    }
-
-    // Cache the result
-    logoCache.set(domain, logoUrl);
-    return logoUrl;
-
   } catch (error) {
-    console.error(`💥 Error fetching logo for ${domain}:`, error);
-    logoCache.set(domain, null);
+    console.error(`💥 Brandfetch API error for ${domain}:`, error.message);
+  }
+
+  console.log(`❌ All logo fetching methods failed for ${domain}`);
+  logoCache.set(domain, null);
+  return null;
+};
+
+/**
+ * Static logo mapping for major brands using Wikipedia/Commons URLs
+ */
+const getStaticLogoMapping = () => {
+  return {
+    'starbucks.com': 'https://upload.wikimedia.org/wikipedia/en/thumb/d/d3/Starbucks_Corporation_Logo_2011.svg/64px-Starbucks_Corporation_Logo_2011.svg.png',
+    'mcdonalds.com': 'https://upload.wikimedia.org/wikipedia/commons/thumb/3/36/McDonald%27s_Golden_Arches.svg/64px-McDonald%27s_Golden_Arches.svg.png',
+    'subway.com': 'https://upload.wikimedia.org/wikipedia/commons/thumb/5/5c/Subway_2016_logo.svg/64px-Subway_2016_logo.svg.png',
+    'tacobell.com': 'https://upload.wikimedia.org/wikipedia/en/thumb/b/b3/Taco_Bell_2016.svg/64px-Taco_Bell_2016.svg.png',
+    'chipotle.com': 'https://upload.wikimedia.org/wikipedia/en/thumb/3/3b/Chipotle_Mexican_Grill_logo.svg/64px-Chipotle_Mexican_Grill_logo.svg.png',
+    'kfc.com': 'https://upload.wikimedia.org/wikipedia/en/thumb/b/bf/KFC_logo.svg/64px-KFC_logo.svg.png',
+    'pizzahut.com': 'https://upload.wikimedia.org/wikipedia/commons/thumb/d/d2/Pizza_Hut_logo.svg/64px-Pizza_Hut_logo.svg.png',
+    'dominos.com': 'https://upload.wikimedia.org/wikipedia/commons/thumb/7/74/Dominos_pizza_logo.svg/64px-Dominos_pizza_logo.svg.png',
+    'papajohns.com': 'https://logos-world.net/wp-content/uploads/2020/09/Papa-Johns-Logo.png',
+    'walmart.com': 'https://upload.wikimedia.org/wikipedia/commons/thumb/c/ca/Walmart_logo.svg/64px-Walmart_logo.svg.png',
+    'target.com': 'https://upload.wikimedia.org/wikipedia/commons/thumb/9/9a/Target_logo.svg/64px-Target_logo.svg.png',
+    'bestbuy.com': 'https://upload.wikimedia.org/wikipedia/commons/thumb/f/f5/Best_Buy_Logo.svg/64px-Best_Buy_Logo.svg.png',
+    'homedepot.com': 'https://upload.wikimedia.org/wikipedia/commons/thumb/5/5f/TheHomeDepot.svg/64px-TheHomeDepot.svg.png',
+    'lowes.com': 'https://upload.wikimedia.org/wikipedia/commons/thumb/9/9f/Lowe%27s_Companies_logo.svg/64px-Lowe%27s_Companies_logo.svg.png',
+    'costco.com': 'https://upload.wikimedia.org/wikipedia/commons/thumb/5/59/Costco_Wholesale_logo_2010-10-26.svg/64px-Costco_Wholesale_logo_2010-10-26.svg.png',
+    'cvs.com': 'https://upload.wikimedia.org/wikipedia/commons/thumb/8/87/CVS_Pharmacy_logo.svg/64px-CVS_Pharmacy_logo.svg.png',
+    'walgreens.com': 'https://upload.wikimedia.org/wikipedia/commons/thumb/1/17/Walgreens_Logo.svg/64px-Walgreens_Logo.svg.png',
+    'shell.com': 'https://upload.wikimedia.org/wikipedia/en/thumb/e/e8/Shell_logo.svg/64px-Shell_logo.svg.png',
+    'bp.com': 'https://upload.wikimedia.org/wikipedia/commons/thumb/7/7b/BP_Logo_2000.svg/64px-BP_Logo_2000.svg.png',
+    'chevron.com': 'https://upload.wikimedia.org/wikipedia/commons/thumb/1/1e/Chevron_Logo.svg/64px-Chevron_Logo.svg.png',
+    'exxonmobil.com': 'https://upload.wikimedia.org/wikipedia/commons/thumb/c/ce/ExxonMobil_Logo.svg/64px-ExxonMobil_Logo.svg.png',
+    'dunkindonuts.com': 'https://upload.wikimedia.org/wikipedia/en/thumb/1/12/Dunkin%27_logo.svg/64px-Dunkin%27_logo.svg.png',
+    'panerabread.com': 'https://upload.wikimedia.org/wikipedia/commons/thumb/d/d8/Panera_Bread_logo.svg/64px-Panera_Bread_logo.svg.png',
+    'timhortons.com': 'https://upload.wikimedia.org/wikipedia/en/thumb/b/b7/Tim_Hortons_logo.svg/64px-Tim_Hortons_logo.svg.png',
+    '7eleven.com': 'https://upload.wikimedia.org/wikipedia/commons/thumb/1/1d/7-eleven_logo.svg/64px-7-eleven_logo.svg.png',
+    'circlek.com': 'https://logos-world.net/wp-content/uploads/2020/12/Circle-K-Logo.png'
+  };
+};
+
+/**
+ * Extract logo URL from Brandfetch API response
+ */
+const extractLogoFromData = (data, domain) => {
+  // Get the best logo (prefer icon format, then logo)
+  const logos = data.logos || [];
+  console.log(`🎨 Found ${logos.length} logos for ${domain}:`, logos.map(l => ({ type: l.type, formats: l.formats?.length || 0 })));
+
+  const bestLogo = logos.find(logo => logo.type === 'icon') ||
+                  logos.find(logo => logo.type === 'logo') ||
+                  logos[0];
+
+  if (!bestLogo) {
+    console.log(`❌ No usable logo found for ${domain}`);
     return null;
   }
+
+  console.log(`🎯 Selected logo for ${domain}:`, { type: bestLogo.type, formats: bestLogo.formats?.length || 0 });
+
+  const logoUrl = bestLogo?.formats?.find(format =>
+    format.format === 'png' || format.format === 'svg' || format.format === 'jpeg' || format.format === 'webp'
+  )?.src || null;
+
+  if (logoUrl) {
+    console.log(`✅ Logo URL found for ${domain}: ${logoUrl}`);
+  } else {
+    console.log(`❌ No supported format (PNG/SVG/JPEG/WebP) found for ${domain}`);
+    console.log(`Available formats:`, bestLogo?.formats?.map(f => f.format));
+  }
+
+  return logoUrl;
 };
 
 /**
