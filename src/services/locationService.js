@@ -419,12 +419,42 @@ const getPrimaryCategory = (types = []) => {
 };
 
 /**
+ * Define hierarchical relationships between categories
+ * Higher priority categories exclude lower priority ones
+ */
+const CATEGORY_HIERARCHIES = {
+  'bank': ['atm'], // If bank is selected, exclude ATMs
+  'hospital': ['doctor', 'medical_lab'], // If hospital is selected, exclude individual doctors/labs
+  'university': ['school', 'primary_school', 'secondary_school'], // If university is selected, exclude other schools
+  'shopping_mall': ['department_store', 'clothing_store', 'shoe_store'], // If mall is selected, exclude individual stores
+  'supermarket': ['grocery_store', 'convenience_store'], // If supermarket is selected, exclude smaller stores
+};
+
+/**
+ * Check if a category should be excluded based on already selected categories
+ * @param {string} category - Category to check
+ * @param {Array} selectedCategories - Already selected categories
+ * @returns {boolean} True if category should be excluded
+ */
+const shouldExcludeCategory = (category, selectedCategories) => {
+  // Check if any selected category hierarchically excludes this category
+  for (const selectedCategory of selectedCategories) {
+    const excludedCategories = CATEGORY_HIERARCHIES[selectedCategory];
+    if (excludedCategories && excludedCategories.includes(category)) {
+      return true;
+    }
+  }
+  return false;
+};
+
+/**
  * Selects top 8 POIs based on priority list with diversity penalty for duplicates
+ * and hierarchical exclusion rules
  * @param {Array} amenities - Raw amenities from Places API
  * @param {number} inputLat - Input location latitude
  * @param {number} inputLng - Input location longitude
  * @param {number} maxResults - Maximum number of results to return (default: 8)
- * @returns {Array} Top priority POIs with diversity
+ * @returns {Array} Top priority POIs with diversity and hierarchy rules
  */
 const selectHighImpactPOIs = (amenities, inputLat, inputLng, maxResults = MAX_POIS) => {
   // Process all amenities and assign priority scores
@@ -465,15 +495,22 @@ const selectHighImpactPOIs = (amenities, inputLat, inputLng, maxResults = MAX_PO
     return 0;
   });
 
-  // Smart selection with diversity penalty
+  // Smart selection with diversity penalty and hierarchical exclusion
   const selectedPOIs = [];
   const categoryCount = {}; // Track how many of each category we've selected
+  const selectedCategories = []; // Track which categories have been selected
 
   for (const place of sortedAmenities) {
     if (selectedPOIs.length >= maxResults) break;
 
     const category = place.primaryCategory;
     const currentCount = categoryCount[category] || 0;
+
+    // Check if this category should be excluded due to hierarchy rules
+    if (shouldExcludeCategory(category, selectedCategories)) {
+      console.log(`🚫 Excluding ${place.name} (${category}) due to hierarchy rules`);
+      continue;
+    }
 
     // Calculate diversity penalty
     // First of a category: no penalty
@@ -518,6 +555,13 @@ const selectHighImpactPOIs = (amenities, inputLat, inputLng, maxResults = MAX_PO
         diversityPenalty
       });
       categoryCount[category] = currentCount + 1;
+
+      // Add to selected categories list (only first time)
+      if (currentCount === 0) {
+        selectedCategories.push(category);
+      }
+
+      console.log(`✅ Selected ${place.name} (${category}) - Priority: ${place.priorityScore}, Adjusted: ${adjustedPriorityScore.toFixed(1)}`);
     }
   }
 
