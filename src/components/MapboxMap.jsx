@@ -3,6 +3,7 @@ import mapboxgl from 'mapbox-gl';
 import html2canvas from 'html2canvas';
 import 'mapbox-gl/dist/mapbox-gl.css';
 
+
 // You'll need to add your Mapbox access token here
 const MAPBOX_TOKEN = 'pk.eyJ1IjoiZW1pci1kYW5pc2lrIiwiYSI6ImNtY25wNXN3eDA5NnYybHBwbmI1OGk5ZzYifQ.ylvc39cPbQysrVCRW_JcHA';
 

@@ -1,68 +1,194 @@
 // ===== CONFIGURATION =====
 const API_KEY = "AIzaSyBnxpK2n_vnXX5CoDMN6mFk3rgJ2Mi6S24";
 
-// High-impact POI categories with priority scoring (based on property value impact)
-const HIGH_IMPACT_CATEGORIES = [
-  {
-    type: "grocery",
-    keywords: ["whole foods", "fred meyer", "trader joe", "kroger", "safeway", "publix", "wegmans", "costco", "sam's club"],
-    priority: 9,
-    googleTypes: ["grocery_or_supermarket", "supermarket"]
-  },
-  {
-    type: "school",
-    keywords: ["elementary", "middle school", "high school", "school", "academy", "university", "college"],
-    priority: 10,
-    googleTypes: ["school", "university"]
-  },
-  {
-    type: "hospital",
-    keywords: ["hospital", "urgent care", "medical center", "clinic", "kaiser permanente"],
-    priority: 9,
-    googleTypes: ["hospital", "doctor"]
-  },
-  {
-    type: "shopping",
-    keywords: ["outlet", "mall", "shopping center", "target", "walmart", "best buy", "home depot", "lowe"],
-    priority: 8,
-    googleTypes: ["shopping_mall", "department_store"]
-  },
-  {
-    type: "pharmacy",
-    keywords: ["walgreens", "cvs", "rite aid", "pharmacy"],
-    priority: 7,
-    googleTypes: ["pharmacy"]
-  },
-  {
-    type: "restaurant",
-    keywords: ["mcdonald", "chipotle", "starbucks", "subway", "pizza hut", "kfc", "taco bell", "panera"],
-    priority: 6,
-    googleTypes: ["restaurant", "meal_takeaway", "cafe"]
-  },
-  {
-    type: "transit",
-    keywords: ["station", "subway", "transit center", "bus stop", "metro"],
-    priority: 6,
-    googleTypes: ["transit_station", "bus_station", "subway_station"]
-  },
-  {
-    type: "park",
-    keywords: ["park", "greenway", "recreation", "playground"],
-    priority: 5,
-    googleTypes: ["park"]
-  }
+// Priority list - higher on the list = higher priority
+const priority = [
+  "grocery_store",
+  "supermarket",
+  "pharmacy",
+  "hospital",
+  "doctor",
+  "dentist",
+  "medical_lab",
+  "dental_clinic",
+  "bank",
+  "atm",
+  "post_office",
+  "library",
+  "secondary_school",
+  "primary_school",
+  "school",
+  "university",
+  "park",
+  "natural_features",
+  "restaurant",
+  "cafe",
+  "coffee_shop",
+  "bakery",
+  "ice_cream_shop",
+  "fine_dining_restaurant",
+  "brunch_restaurant",
+  "vegetarian_restaurant",
+  "vegan_restaurant",
+  "wine_bar",
+  "tea_house",
+  "book_store",
+  "shopping_mall",
+  "department_store",
+  "home_goods_store",
+  "furniture_store",
+  "hardware_store",
+  "electronics_store",
+  "pet_store",
+  "fitness_center",
+  "gym",
+  "yoga_studio",
+  "spa",
+  "massage",
+  "beauty_salon",
+  "hair_salon",
+  "nail_salon",
+  "barber_shop",
+  "public_transport",
+  "subway_station",
+  "train_station",
+  "bus_station",
+  "light_rail_station",
+  "transit_station",
+  "tourist_attraction",
+  "museum",
+  "art_gallery",
+  "concert_hall",
+  "performing_arts_theater",
+  "cultural_center",
+  "church",
+  "synagogue",
+  "mosque",
+  "hindu_temple",
+  "golf_course",
+  "swimming_pool",
+  "zoo",
+  "dog_park",
+  "botanical_garden",
+  "community_center",
+  "senior_center",
+  "convenience_store",
+  "food_store",
+  "gift_shop",
+  "clothing_store",
+  "shoe_store",
+  "liquor_store",
+  "candy_store",
+  "market",
+  "book_store",
+  "warehouse_store",
+  "auto_parts_store",
+  "car_repair",
+  "car_wash",
+  "gas_station",
+  "parking",
+  "laundry",
+  "locksmith",
+  "courier_service",
+  "storage",
+  "moving_company",
+  "plumber",
+  "electrician",
+  "roofing_contractor",
+  "real_estate_agency",
+  "insurance_agency",
+  "lawyer",
+  "consultant",
+  "city_hall",
+  "government_office",
+  "fire_station",
+  "police",
+  "courthouse",
+  "cemetery",
+  "funeral_home",
+  "post_office",
+  "embassy",
+  "neighborhood_police_station",
+  "wellness_center",
+  "skin_care_clinic",
+  "sauna",
+  "tanning_studio",
+  "makeup_artist",
+  "florist",
+  "art_studio",
+  "sculpture",
+  "historical_place",
+  "historical_landmark",
+  "monument",
+  "planetarium",
+  "observation_deck",
+  "movie_theater",
+  "video_arcade",
+  "amusement_park",
+  "casino",
+  "night_club",
+  "bar",
+  "karaoke",
+  "comedy_club",
+  "dog_cafe",
+  "cat_cafe",
+  "fast_food_restaurant",
+  "hamburger_restaurant",
+  "pizza_restaurant",
+  "barbecue_restaurant",
+  "chinese_restaurant",
+  "indian_restaurant",
+  "japanese_restaurant",
+  "korean_restaurant",
+  "thai_restaurant",
+  "turkish_restaurant",
+  "mexican_restaurant",
+  "greek_restaurant",
+  "french_restaurant",
+  "spanish_restaurant",
+  "lebanese_restaurant",
+  "middle_eastern_restaurant",
+  "american_restaurant",
+  "asian_restaurant",
+  "ramen_restaurant",
+  "sushi_restaurant",
+  "dessert_shop",
+  "donut_shop",
+  "bagel_shop",
+  "confectionery",
+  "buffet_restaurant",
+  "meal_delivery",
+  "meal_takeaway",
+  "acai_shop",
+  "juice_shop",
+  "smoothie_shop",
+  "warehouse",
+  "auto_repair",
+  "car_dealer",
+  "car_rental",
+  "truck_stop",
+  "electric_vehicle_charging_station",
+  "rest_stop",
+  "heliport",
+  "airport",
+  "international_airport",
+  "airstrip",
+  "taxi_stand",
+  "bike_share_station",
+  "ferry_terminal",
+  "transit_depot"
 ];
 
-// Maximum number of high-impact POIs to return
-const MAX_HIGH_IMPACT_POIS = 8;
+// Maximum number of POIs to return
+const MAX_POIS = 15;
 
 // Search radius reduced to 2km for higher relevance
 const DEFAULT_SEARCH_RADIUS = 2000; // 2km in meters
 
-// Search keywords optimized for high-impact categories
+// Search keywords for broad search
 const AMENITY_KEYWORDS = [
   'grocery', 'supermarket', 'school', 'hospital', 'shopping_mall',
-  'pharmacy', 'restaurant', 'transit_station', 'park'
+  'pharmacy', 'restaurant', 'transit_station', 'park', 'bank', 'cafe'
 ];
 
 // Constants for API calls
@@ -251,194 +377,74 @@ const fetchPlaceDetails = (placesService, place) => {
 // ===== HIGH-IMPACT POI FILTERING =====
 
 /**
- * Determines if a place matches high-impact criteria
- * @param {Object} place - Place object from Places API
- * @returns {Object|null} Category match with priority or null if no match
+ * Get priority score for a place based on its types
+ * @param {Array} types - Place types from Google Places API
+ * @returns {number} Priority score (lower number = higher priority, Infinity = not in priority list)
  */
-const getHighImpactCategory = (place) => {
-  if (!place.name && !place.types) return null;
+const getPriorityScore = (types = []) => {
+  if (!types || types.length === 0) return Infinity;
 
-  const placeName = (place.name || '').toLowerCase();
-  const placeTypes = place.types || [];
-
-  // Check each high-impact category
-  for (const category of HIGH_IMPACT_CATEGORIES) {
-    // Check if place name matches any keywords
-    const nameMatch = category.keywords.some(keyword =>
-      placeName.includes(keyword.toLowerCase())
-    );
-
-    // Check if place types match any Google types
-    const typeMatch = category.googleTypes.some(googleType =>
-      placeTypes.includes(googleType)
-    );
-
-    if (nameMatch || typeMatch) {
-      return {
-        type: category.type,
-        priority: category.priority
-      };
+  // Find the highest priority type (lowest index in priority array)
+  let bestPriority = Infinity;
+  for (const type of types) {
+    const priorityIndex = priority.indexOf(type);
+    if (priorityIndex !== -1 && priorityIndex < bestPriority) {
+      bestPriority = priorityIndex;
     }
   }
 
-  return null; // Not a high-impact POI
+  return bestPriority;
 };
 
 /**
- * Calculate high-impact score combining priority, proximity, and brand recognition
- * @param {Object} place - Place object from Places API
- * @param {number} inputLat - Input location latitude
- * @param {number} inputLng - Input location longitude
- * @param {number} maxDistance - Maximum search radius
- * @returns {number} High-impact score (0-1000)
- */
-const calculateHighImpactScore = (place, inputLat, inputLng, maxDistance = DEFAULT_SEARCH_RADIUS) => {
-  // First check if this is a high-impact POI
-  const categoryMatch = getHighImpactCategory(place);
-  if (!categoryMatch) {
-    return 0; // Filter out non-high-impact POIs
-  }
-
-  // Get place coordinates
-  const placeLat = place.geometry?.location?.lat() || place.coordinates?.lat;
-  const placeLng = place.geometry?.location?.lng() || place.coordinates?.lng;
-
-  if (!placeLat || !placeLng) {
-    return 0; // No score if coordinates are missing
-  }
-
-  // Calculate distance from input location
-  const distance = calculateDistance(inputLat, inputLng, placeLat, placeLng);
-
-  // Calculate component scores
-  const proximityScore = calculateProximityScore(distance, maxDistance);
-  const priorityScore = categoryMatch.priority * 10; // Scale priority to 0-100
-
-  // Check for brand recognition bonus
-  const placeName = (place.name || '').toLowerCase();
-  const isBrandName = categoryMatch.type === 'grocery' &&
-    ['whole foods', 'trader joe'].some(brand => placeName.includes(brand));
-  const brandBonus = isBrandName ? 20 : 0;
-
-  // Combined score: priority (50%) + proximity (40%) + brand bonus (10%)
-  const totalScore = (priorityScore * 0.5) + (proximityScore * 0.4) + brandBonus;
-
-  return Math.round(totalScore * 100) / 100;
-};
-
-/**
- * Selects top 8 high-impact POIs with category diversity
+ * Selects top 8 POIs based on priority list
  * @param {Array} amenities - Raw amenities from Places API
  * @param {number} inputLat - Input location latitude
  * @param {number} inputLng - Input location longitude
  * @param {number} maxResults - Maximum number of results to return (default: 8)
- * @returns {Array} Top high-impact POIs with category diversity
+ * @returns {Array} Top priority POIs
  */
-const selectHighImpactPOIs = (amenities, inputLat, inputLng, maxResults = MAX_HIGH_IMPACT_POIS) => {
-  // Filter and score only high-impact amenities
-  const highImpactAmenities = amenities
+const selectHighImpactPOIs = (amenities, inputLat, inputLng, maxResults = MAX_POIS) => {
+  // Process all amenities and assign priority scores
+  const processedAmenities = amenities
     .map(place => {
-      const categoryMatch = getHighImpactCategory(place);
-      if (!categoryMatch) return null;
+      const priorityScore = getPriorityScore(place.types);
+
+      // Skip places not in priority list
+      if (priorityScore === Infinity) return null;
 
       return {
         ...place,
-        score: calculateHighImpactScore(place, inputLat, inputLng),
+        priorityScore,
         distance: place.geometry?.location ? calculateDistance(
           inputLat,
           inputLng,
           place.geometry.location.lat(),
           place.geometry.location.lng()
-        ) : null,
-        highImpactCategory: categoryMatch.type,
-        priority: categoryMatch.priority
+        ) : null
       };
     })
-    .filter(place => place && place.score > 0); // Remove null and zero-scored places
+    .filter(place => place !== null); // Remove places not in priority list
 
-  if (highImpactAmenities.length === 0) {
+  if (processedAmenities.length === 0) {
     return [];
   }
 
-  // Sort by score (highest first)
-  const sortedAmenities = highImpactAmenities.sort((a, b) => {
-    // Primary sort by score
-    if (Math.abs(a.score - b.score) > 1) {
-      return b.score - a.score;
+  // Sort by priority (lower priorityScore = higher priority)
+  // If priority is the same, sort by distance
+  const sortedAmenities = processedAmenities.sort((a, b) => {
+    if (a.priorityScore !== b.priorityScore) {
+      return a.priorityScore - b.priorityScore;
     }
-    // Secondary sort by priority if scores are close
-    if (a.priority !== b.priority) {
-      return b.priority - a.priority;
-    }
-    // Tertiary sort by distance
+    // Same priority, sort by distance
     if (a.distance && b.distance) {
       return a.distance - b.distance;
     }
-    return a.name.localeCompare(b.name);
+    return 0;
   });
 
-  // Implement category diversity selection
-  const selectedPOIs = [];
-  const categoryGroups = {};
-
-  // Group by high-impact category
-  sortedAmenities.forEach(poi => {
-    const category = poi.highImpactCategory;
-    if (!categoryGroups[category]) {
-      categoryGroups[category] = [];
-    }
-    categoryGroups[category].push(poi);
-  });
-
-  // First pass: select best POI from each category (prioritizing highest-priority categories)
-  const categories = Object.keys(categoryGroups).sort((a, b) => {
-    const priorityA = HIGH_IMPACT_CATEGORIES.find(c => c.type === a)?.priority || 0;
-    const priorityB = HIGH_IMPACT_CATEGORIES.find(c => c.type === b)?.priority || 0;
-    return priorityB - priorityA;
-  });
-
-  for (const category of categories) {
-    if (selectedPOIs.length >= maxResults) break;
-
-    const bestInCategory = categoryGroups[category][0]; // Already sorted by score
-    selectedPOIs.push(bestInCategory);
-  }
-
-  // Second pass: fill remaining slots with highest-scoring POIs
-  const maxPerCategory = Math.max(1, Math.floor(maxResults / categories.length));
-  const categoryCounts = {};
-
-  // Initialize category counts
-  selectedPOIs.forEach(poi => {
-    const category = poi.highImpactCategory;
-    categoryCounts[category] = (categoryCounts[category] || 0) + 1;
-  });
-
-  // Add more POIs while respecting reasonable category limits
-  for (const poi of sortedAmenities) {
-    if (selectedPOIs.length >= maxResults) break;
-
-    // Skip if already selected
-    if (selectedPOIs.some(selected => selected.place_id === poi.place_id)) {
-      continue;
-    }
-
-    const category = poi.highImpactCategory;
-    const currentCount = categoryCounts[category] || 0;
-
-    // Allow up to 2 POIs per category for high-priority categories (schools, hospitals, grocery)
-    const maxForCategory = poi.priority >= 9 ? 2 : maxPerCategory;
-
-    if (currentCount < maxForCategory) {
-      selectedPOIs.push(poi);
-      categoryCounts[category] = currentCount + 1;
-    }
-  }
-
-  // Final sort by score to maintain quality ordering
-  return selectedPOIs
-    .sort((a, b) => b.score - a.score)
-    .slice(0, maxResults);
+  // Return top maxResults
+  return sortedAmenities.slice(0, maxResults);
 };
 
 /**
@@ -462,19 +468,6 @@ const calculateDistance = (lat1, lng1, lat2, lng2) => {
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
 
   return R * c; // Distance in meters
-};
-
-/**
- * Calculate proximity score based on distance from input location
- * @param {number} distance - Distance in meters
- * @param {number} maxDistance - Maximum search radius in meters
- * @returns {number} Proximity score (0-100)
- */
-const calculateProximityScore = (distance, maxDistance = DEFAULT_SEARCH_RADIUS) => {
-  if (distance >= maxDistance) return 0;
-
-  // Linear decay: closer = higher score
-  return Math.max(0, 100 * (1 - distance / maxDistance));
 };
 
 /**
@@ -503,7 +496,7 @@ export const getNearbyAmenities = async (placesService, lat, lng, radius = DEFAU
   }
 
   // Select top 8 high-impact POIs
-  const topHighImpactPOIs = selectHighImpactPOIs(allAmenities, lat, lng, MAX_HIGH_IMPACT_POIS);
+  const topHighImpactPOIs = selectHighImpactPOIs(allAmenities, lat, lng, MAX_POIS);
 
   if (topHighImpactPOIs.length === 0) {
     return [];
