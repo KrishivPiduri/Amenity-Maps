@@ -22,7 +22,7 @@ const PADDING = 20;
 const logoCache = new Map();
 
 /**
- * Fetch brand logo with multiple fallback methods
+ * Fetch brand logo using Brandfetch API with proper CORS handling
  * @param {string} domain - The domain to fetch logo for
  * @returns {Promise<string|null>} Logo URL or null if not found
  */
@@ -36,161 +36,226 @@ const fetchBrandLogo = async (domain) => {
     return cachedResult;
   }
 
-  // Method 1: Static logo mapping for major brands (highest priority)
-  const staticLogos = getStaticLogoMapping();
-  if (staticLogos[domain]) {
-    console.log(`✅ Using static logo mapping for ${domain}`);
-    logoCache.set(domain, staticLogos[domain]);
-    return staticLogos[domain];
-  }
-
-  // Method 2: Try Clearbit Logo API (free, no auth needed)
+  // Method 1: Try Brandfetch API with proper configuration
   try {
-    console.log(`🔄 Trying Clearbit Logo API for: ${domain}`);
-    const clearbitUrl = `https://logo.clearbit.com/${domain}`;
+    console.log(`📡 Making Brandfetch API request for: ${domain}`);
 
-    // Test if the logo exists by creating an image element
-    const logoExists = await new Promise((resolve) => {
-      const img = new Image();
-      img.onload = () => {
-        console.log(`✅ Clearbit logo found for ${domain}`);
-        resolve(true);
-      };
-      img.onerror = () => {
-        console.log(`❌ Clearbit logo not found for ${domain}`);
-        resolve(false);
-      };
-      img.src = clearbitUrl;
-
-      // Timeout after 2 seconds
-      setTimeout(() => {
-        console.log(`⏰ Clearbit logo test timeout for ${domain}`);
-        resolve(false);
-      }, 2000);
+    const response = await fetch(`${BRANDFETCH_BASE_URL}/brands/${domain}`, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${BRANDFETCH_API_KEY}`,
+        'Accept': 'application/json',
+        'Content-Type': 'application/json'
+      },
+      mode: 'cors',
+      credentials: 'omit'
     });
 
+    console.log(`📊 Brandfetch response: ${response.status} ${response.statusText}`);
+
+    if (response.ok) {
+      const data = await response.json();
+      console.log(`📦 Brandfetch data received for ${domain}:`, data);
+
+      const logoUrl = extractLogoFromBrandfetchData(data, domain);
+      if (logoUrl) {
+        console.log(`✅ Brandfetch logo found for ${domain}: ${logoUrl}`);
+        logoCache.set(domain, logoUrl);
+        return logoUrl;
+      }
+    } else {
+      const errorText = await response.text();
+      console.log(`❌ Brandfetch API error ${response.status}: ${errorText}`);
+
+      // Try alternative domain formats for 404 errors
+      if (response.status === 404) {
+        const altDomain = domain.replace('www.', '');
+        if (altDomain !== domain) {
+          console.log(`🔄 Trying alternative domain: ${altDomain}`);
+          return await fetchBrandLogoAlternative(altDomain);
+        }
+      }
+    }
+  } catch (error) {
+    console.error(`💥 Brandfetch API network error for ${domain}:`, error);
+
+    // Check if it's a CORS error and try workaround
+    if (error.message.includes('CORS') || error.message.includes('fetch')) {
+      console.log(`🚨 CORS detected, trying proxy approach for ${domain}`);
+      return await fetchBrandLogoWithProxy(domain);
+    }
+  }
+
+  // Method 2: Try Clearbit as immediate fallback
+  try {
+    console.log(`🔄 Brandfetch failed, trying Clearbit for: ${domain}`);
+    const clearbitUrl = `https://logo.clearbit.com/${domain}`;
+
+    const logoExists = await testImageUrl(clearbitUrl, 2000);
     if (logoExists) {
+      console.log(`✅ Clearbit logo found for ${domain}`);
       logoCache.set(domain, clearbitUrl);
       return clearbitUrl;
     }
   } catch (error) {
-    console.error(`💥 Clearbit API error for ${domain}:`, error.message);
+    console.error(`💥 Clearbit error for ${domain}:`, error.message);
   }
 
-  // Method 3: Try Google Favicon API
+  // Method 3: Google Favicon as last resort
   try {
-    console.log(`🔄 Trying Google Favicon API for: ${domain}`);
+    console.log(`🔄 Using Google Favicon fallback for: ${domain}`);
     const faviconUrl = `https://www.google.com/s2/favicons?sz=64&domain=${domain}`;
-
-    // Google's favicon API usually works, so we'll use it as a backup
-    console.log(`✅ Using Google Favicon for ${domain}: ${faviconUrl}`);
     logoCache.set(domain, faviconUrl);
     return faviconUrl;
   } catch (error) {
-    console.error(`💥 Google Favicon API error for ${domain}:`, error.message);
+    console.error(`💥 Google Favicon error for ${domain}:`, error.message);
   }
 
-  // Method 4: Try Brandfetch API (lowest priority due to CORS issues)
+  console.log(`❌ All methods failed for ${domain}`);
+  logoCache.set(domain, null);
+  return null;
+};
+
+/**
+ * Try alternative domain format for Brandfetch
+ */
+const fetchBrandLogoAlternative = async (domain) => {
   try {
-    console.log(`📡 Making API request to Brandfetch for: ${domain}`);
-
-    const headers = {
-      'Authorization': `Bearer ${BRANDFETCH_API_KEY}`,
-      'Content-Type': 'application/json',
-      'Accept': 'application/json'
-    };
-
     const response = await fetch(`${BRANDFETCH_BASE_URL}/brands/${domain}`, {
       method: 'GET',
-      headers: headers,
-      mode: 'cors'
+      headers: {
+        'Authorization': `Bearer ${BRANDFETCH_API_KEY}`,
+        'Accept': 'application/json',
+        'Content-Type': 'application/json'
+      },
+      mode: 'cors',
+      credentials: 'omit'
     });
-
-    console.log(`📊 Brandfetch API response status: ${response.status} ${response.statusText}`);
 
     if (response.ok) {
       const data = await response.json();
-      console.log(`📦 Brandfetch API response data for ${domain}:`, data);
-      const logoUrl = extractLogoFromData(data, domain);
+      const logoUrl = extractLogoFromBrandfetchData(data, domain);
       if (logoUrl) {
         logoCache.set(domain, logoUrl);
         return logoUrl;
       }
     }
   } catch (error) {
-    console.error(`💥 Brandfetch API error for ${domain}:`, error.message);
+    console.error(`Alternative domain fetch failed: ${error.message}`);
   }
-
-  console.log(`❌ All logo fetching methods failed for ${domain}`);
-  logoCache.set(domain, null);
   return null;
 };
 
 /**
- * Static logo mapping for major brands using Wikipedia/Commons URLs
+ * Try Brandfetch with CORS proxy (if available)
  */
-const getStaticLogoMapping = () => {
-  return {
-    'starbucks.com': 'https://upload.wikimedia.org/wikipedia/en/thumb/d/d3/Starbucks_Corporation_Logo_2011.svg/64px-Starbucks_Corporation_Logo_2011.svg.png',
-    'mcdonalds.com': 'https://upload.wikimedia.org/wikipedia/commons/thumb/3/36/McDonald%27s_Golden_Arches.svg/64px-McDonald%27s_Golden_Arches.svg.png',
-    'subway.com': 'https://upload.wikimedia.org/wikipedia/commons/thumb/5/5c/Subway_2016_logo.svg/64px-Subway_2016_logo.svg.png',
-    'tacobell.com': 'https://upload.wikimedia.org/wikipedia/en/thumb/b/b3/Taco_Bell_2016.svg/64px-Taco_Bell_2016.svg.png',
-    'chipotle.com': 'https://upload.wikimedia.org/wikipedia/en/thumb/3/3b/Chipotle_Mexican_Grill_logo.svg/64px-Chipotle_Mexican_Grill_logo.svg.png',
-    'kfc.com': 'https://upload.wikimedia.org/wikipedia/en/thumb/b/bf/KFC_logo.svg/64px-KFC_logo.svg.png',
-    'pizzahut.com': 'https://upload.wikimedia.org/wikipedia/commons/thumb/d/d2/Pizza_Hut_logo.svg/64px-Pizza_Hut_logo.svg.png',
-    'dominos.com': 'https://upload.wikimedia.org/wikipedia/commons/thumb/7/74/Dominos_pizza_logo.svg/64px-Dominos_pizza_logo.svg.png',
-    'papajohns.com': 'https://logos-world.net/wp-content/uploads/2020/09/Papa-Johns-Logo.png',
-    'walmart.com': 'https://upload.wikimedia.org/wikipedia/commons/thumb/c/ca/Walmart_logo.svg/64px-Walmart_logo.svg.png',
-    'target.com': 'https://upload.wikimedia.org/wikipedia/commons/thumb/9/9a/Target_logo.svg/64px-Target_logo.svg.png',
-    'bestbuy.com': 'https://upload.wikimedia.org/wikipedia/commons/thumb/f/f5/Best_Buy_Logo.svg/64px-Best_Buy_Logo.svg.png',
-    'homedepot.com': 'https://upload.wikimedia.org/wikipedia/commons/thumb/5/5f/TheHomeDepot.svg/64px-TheHomeDepot.svg.png',
-    'lowes.com': 'https://upload.wikimedia.org/wikipedia/commons/thumb/9/9f/Lowe%27s_Companies_logo.svg/64px-Lowe%27s_Companies_logo.svg.png',
-    'costco.com': 'https://upload.wikimedia.org/wikipedia/commons/thumb/5/59/Costco_Wholesale_logo_2010-10-26.svg/64px-Costco_Wholesale_logo_2010-10-26.svg.png',
-    'cvs.com': 'https://upload.wikimedia.org/wikipedia/commons/thumb/8/87/CVS_Pharmacy_logo.svg/64px-CVS_Pharmacy_logo.svg.png',
-    'walgreens.com': 'https://upload.wikimedia.org/wikipedia/commons/thumb/1/17/Walgreens_Logo.svg/64px-Walgreens_Logo.svg.png',
-    'shell.com': 'https://upload.wikimedia.org/wikipedia/en/thumb/e/e8/Shell_logo.svg/64px-Shell_logo.svg.png',
-    'bp.com': 'https://upload.wikimedia.org/wikipedia/commons/thumb/7/7b/BP_Logo_2000.svg/64px-BP_Logo_2000.svg.png',
-    'chevron.com': 'https://upload.wikimedia.org/wikipedia/commons/thumb/1/1e/Chevron_Logo.svg/64px-Chevron_Logo.svg.png',
-    'exxonmobil.com': 'https://upload.wikimedia.org/wikipedia/commons/thumb/c/ce/ExxonMobil_Logo.svg/64px-ExxonMobil_Logo.svg.png',
-    'dunkindonuts.com': 'https://upload.wikimedia.org/wikipedia/en/thumb/1/12/Dunkin%27_logo.svg/64px-Dunkin%27_logo.svg.png',
-    'panerabread.com': 'https://upload.wikimedia.org/wikipedia/commons/thumb/d/d8/Panera_Bread_logo.svg/64px-Panera_Bread_logo.svg.png',
-    'timhortons.com': 'https://upload.wikimedia.org/wikipedia/en/thumb/b/b7/Tim_Hortons_logo.svg/64px-Tim_Hortons_logo.svg.png',
-    '7eleven.com': 'https://upload.wikimedia.org/wikipedia/commons/thumb/1/1d/7-eleven_logo.svg/64px-7-eleven_logo.svg.png',
-    'circlek.com': 'https://logos-world.net/wp-content/uploads/2020/12/Circle-K-Logo.png'
-  };
+const fetchBrandLogoWithProxy = async (domain) => {
+  try {
+    // You can use a CORS proxy service like cors-anywhere or allorigins
+    const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(`${BRANDFETCH_BASE_URL}/brands/${domain}`)}`;
+
+    const response = await fetch(proxyUrl, {
+      headers: {
+        'Authorization': `Bearer ${BRANDFETCH_API_KEY}`
+      }
+    });
+
+    if (response.ok) {
+      const proxyData = await response.json();
+      const data = JSON.parse(proxyData.contents);
+      const logoUrl = extractLogoFromBrandfetchData(data, domain);
+      if (logoUrl) {
+        logoCache.set(domain, logoUrl);
+        return logoUrl;
+      }
+    }
+  } catch (error) {
+    console.error(`Proxy fetch failed: ${error.message}`);
+  }
+  return null;
 };
 
 /**
- * Extract logo URL from Brandfetch API response
+ * Test if an image URL is valid and loads successfully
  */
-const extractLogoFromData = (data, domain) => {
-  // Get the best logo (prefer icon format, then logo)
-  const logos = data.logos || [];
-  console.log(`🎨 Found ${logos.length} logos for ${domain}:`, logos.map(l => ({ type: l.type, formats: l.formats?.length || 0 })));
+const testImageUrl = (url, timeout = 3000) => {
+  return new Promise((resolve) => {
+    const img = new Image();
 
-  const bestLogo = logos.find(logo => logo.type === 'icon') ||
-                  logos.find(logo => logo.type === 'logo') ||
-                  logos[0];
+    const timer = setTimeout(() => {
+      resolve(false);
+    }, timeout);
 
-  if (!bestLogo) {
-    console.log(`❌ No usable logo found for ${domain}`);
+    img.onload = () => {
+      clearTimeout(timer);
+      resolve(true);
+    };
+
+    img.onerror = () => {
+      clearTimeout(timer);
+      resolve(false);
+    };
+
+    img.src = url;
+  });
+};
+
+/**
+ * Extract logo URL from Brandfetch API response with improved logic
+ */
+const extractLogoFromBrandfetchData = (data, domain) => {
+  try {
+    const logos = data.logos || [];
+    console.log(`🎨 Found ${logos.length} logos for ${domain}`);
+
+    if (logos.length === 0) {
+      console.log(`❌ No logos in Brandfetch response for ${domain}`);
+      return null;
+    }
+
+    // Priority order: icon > logo > symbol > any other type
+    const logoTypes = ['icon', 'logo', 'symbol'];
+    let bestLogo = null;
+
+    for (const type of logoTypes) {
+      bestLogo = logos.find(logo => logo.type === type);
+      if (bestLogo) break;
+    }
+
+    // If no preferred type found, use the first logo
+    if (!bestLogo) {
+      bestLogo = logos[0];
+    }
+
+    console.log(`🎯 Selected logo type "${bestLogo.type}" for ${domain}`);
+
+    // Extract the best format (prefer PNG > SVG > JPEG > WebP)
+    const formats = bestLogo.formats || [];
+    const formatPriority = ['png', 'svg', 'jpeg', 'jpg', 'webp'];
+
+    let bestFormat = null;
+    for (const format of formatPriority) {
+      bestFormat = formats.find(f => f.format === format);
+      if (bestFormat) break;
+    }
+
+    if (!bestFormat && formats.length > 0) {
+      bestFormat = formats[0]; // Fallback to first available format
+    }
+
+    if (!bestFormat) {
+      console.log(`❌ No usable formats found for ${domain}`);
+      return null;
+    }
+
+    const logoUrl = bestFormat.src;
+    console.log(`✅ Extracted logo URL for ${domain}: ${logoUrl}`);
+    return logoUrl;
+
+  } catch (error) {
+    console.error(`Error extracting logo from Brandfetch data for ${domain}:`, error);
     return null;
   }
-
-  console.log(`🎯 Selected logo for ${domain}:`, { type: bestLogo.type, formats: bestLogo.formats?.length || 0 });
-
-  const logoUrl = bestLogo?.formats?.find(format =>
-    format.format === 'png' || format.format === 'svg' || format.format === 'jpeg' || format.format === 'webp'
-  )?.src || null;
-
-  if (logoUrl) {
-    console.log(`✅ Logo URL found for ${domain}: ${logoUrl}`);
-  } else {
-    console.log(`❌ No supported format (PNG/SVG/JPEG/WebP) found for ${domain}`);
-    console.log(`Available formats:`, bestLogo?.formats?.map(f => f.format));
-  }
-
-  return logoUrl;
 };
 
 /**
@@ -239,7 +304,12 @@ const extractDomainFromName = (name) => {
     'dunkin donuts': 'dunkindonuts.com',
     'tim hortons': 'timhortons.com',
     'panera': 'panerabread.com',
-    'panera bread': 'panerabread.com'
+    'panera bread': 'panerabread.com',
+    'wendys': 'wendys.com',
+    'wendy\'s': 'wendys.com',
+    'popeyes': 'popeyes.com',
+    'sonic': 'sonicdrivein.com',
+    'sonic drive-in': 'sonicdrivein.com'
   };
 
   // Check for exact matches first
