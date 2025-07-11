@@ -27,12 +27,17 @@ const logoCache = new Map();
  * @returns {Promise<string|null>} Logo URL or null if not found
  */
 const fetchBrandLogo = async (domain) => {
+  console.log(`🌐 Attempting to fetch logo for domain: ${domain}`);
+
   // Check cache first
   if (logoCache.has(domain)) {
-    return logoCache.get(domain);
+    const cachedResult = logoCache.get(domain);
+    console.log(`💾 Cache hit for ${domain}: ${cachedResult ? 'has logo' : 'no logo'}`);
+    return cachedResult;
   }
 
   try {
+    console.log(`📡 Making API request to Brandfetch for: ${domain}`);
     const response = await fetch(`${BRANDFETCH_BASE_URL}/brands/${domain}`, {
       headers: {
         'Authorization': `Bearer ${BRANDFETCH_API_KEY}`,
@@ -40,29 +45,50 @@ const fetchBrandLogo = async (domain) => {
       }
     });
 
+    console.log(`📊 Brandfetch API response status: ${response.status} ${response.statusText}`);
+
     if (!response.ok) {
+      console.log(`❌ Brandfetch API failed for ${domain}: ${response.status} ${response.statusText}`);
       logoCache.set(domain, null);
       return null;
     }
 
     const data = await response.json();
+    console.log(`📦 Brandfetch API response data for ${domain}:`, data);
 
     // Get the best logo (prefer icon format, then logo)
     const logos = data.logos || [];
+    console.log(`🎨 Found ${logos.length} logos for ${domain}:`, logos.map(l => ({ type: l.type, formats: l.formats?.length || 0 })));
+
     const bestLogo = logos.find(logo => logo.type === 'icon') ||
                     logos.find(logo => logo.type === 'logo') ||
                     logos[0];
 
+    if (!bestLogo) {
+      console.log(`❌ No usable logo found for ${domain}`);
+      logoCache.set(domain, null);
+      return null;
+    }
+
+    console.log(`🎯 Selected logo for ${domain}:`, { type: bestLogo.type, formats: bestLogo.formats?.length || 0 });
+
     const logoUrl = bestLogo?.formats?.find(format =>
-      format.format === 'png' || format.format === 'svg'
+      format.format === 'png' || format.format === 'svg' || format.format === 'jpeg' || format.format === 'webp'
     )?.src || null;
+
+    if (logoUrl) {
+      console.log(`✅ Logo URL found for ${domain}: ${logoUrl}`);
+    } else {
+      console.log(`❌ No supported format (PNG/SVG/JPEG/WebP) found for ${domain}`);
+      console.log(`Available formats:`, bestLogo?.formats?.map(f => f.format));
+    }
 
     // Cache the result
     logoCache.set(domain, logoUrl);
     return logoUrl;
 
   } catch (error) {
-    console.error('Error fetching logo for', domain, error);
+    console.error(`💥 Error fetching logo for ${domain}:`, error);
     logoCache.set(domain, null);
     return null;
   }
@@ -75,6 +101,7 @@ const fetchBrandLogo = async (domain) => {
  */
 const extractDomainFromName = (name) => {
   const normalizedName = name.toLowerCase().trim();
+  console.log(`🔍 Trying to match: "${normalizedName}"`);
 
   // Known brand mappings to domains
   const brandDomains = {
@@ -118,16 +145,43 @@ const extractDomainFromName = (name) => {
 
   // Check for exact matches first
   if (brandDomains[normalizedName]) {
+    console.log(`✅ Exact match found: "${normalizedName}" -> ${brandDomains[normalizedName]}`);
     return brandDomains[normalizedName];
   }
 
-  // Check for partial matches
-  for (const [brand, domain] of Object.entries(brandDomains)) {
-    if (normalizedName.includes(brand)) {
+  // Check for partial matches - sort by length descending to match longer brands first
+  const sortedBrands = Object.entries(brandDomains).sort((a, b) => b[0].length - a[0].length);
+
+  for (const [brand, domain] of sortedBrands) {
+    // Use word boundary matching for better accuracy
+    const brandWords = brand.split(/\s+/);
+    const nameWords = normalizedName.split(/\s+/);
+
+    console.log(`  🔎 Checking brand "${brand}" (${brandWords.join(', ')}) against name words (${nameWords.join(', ')})`);
+
+    // Check if all words from the brand appear in the name
+    const allWordsMatch = brandWords.every(brandWord => {
+      const found = nameWords.some(nameWord => nameWord.includes(brandWord));
+      console.log(`    • Brand word "${brandWord}" ${found ? '✅ found' : '❌ not found'} in name words`);
+      return found;
+    });
+
+    if (allWordsMatch) {
+      console.log(`✅ Word match found: "${normalizedName}" -> brand "${brand}" -> ${domain}`);
       return domain;
     }
   }
 
+  // Fallback to simple includes check
+  console.log(`🔄 Trying fallback simple includes check...`);
+  for (const [brand, domain] of sortedBrands) {
+    if (normalizedName.includes(brand)) {
+      console.log(`✅ Fallback matched "${normalizedName}" to brand "${brand}" -> ${domain}`);
+      return domain;
+    }
+  }
+
+  console.log(`❌ No brand match found for: "${normalizedName}"`);
   return null;
 };
 
