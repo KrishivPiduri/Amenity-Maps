@@ -67,7 +67,7 @@ function App() {
     setAmenitiesError(null);
 
     try {
-      const nearbyAmenities = await getNearbyAmenities(services.placesService, lat, lng);
+      const nearbyAmenities = await getNearbyAmenities(services.placesService, lat, lng, 2000);
       setAmenities(nearbyAmenities);
     } catch (amenitiesErr) {
       setAmenitiesError(amenitiesErr.message);
