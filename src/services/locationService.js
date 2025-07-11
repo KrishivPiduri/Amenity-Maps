@@ -397,12 +397,34 @@ const getPriorityScore = (types = []) => {
 };
 
 /**
- * Selects top 8 POIs based on priority list
+ * Get the primary category for a place (the highest priority type)
+ * @param {Array} types - Place types from Google Places API
+ * @returns {string} Primary category or 'unknown'
+ */
+const getPrimaryCategory = (types = []) => {
+  if (!types || types.length === 0) return 'unknown';
+
+  let bestPriority = Infinity;
+  let primaryCategory = 'unknown';
+
+  for (const type of types) {
+    const priorityIndex = priority.indexOf(type);
+    if (priorityIndex !== -1 && priorityIndex < bestPriority) {
+      bestPriority = priorityIndex;
+      primaryCategory = type;
+    }
+  }
+
+  return primaryCategory;
+};
+
+/**
+ * Selects top 8 POIs based on priority list with diversity penalty for duplicates
  * @param {Array} amenities - Raw amenities from Places API
  * @param {number} inputLat - Input location latitude
  * @param {number} inputLng - Input location longitude
  * @param {number} maxResults - Maximum number of results to return (default: 8)
- * @returns {Array} Top priority POIs
+ * @returns {Array} Top priority POIs with diversity
  */
 const selectHighImpactPOIs = (amenities, inputLat, inputLng, maxResults = MAX_POIS) => {
   // Process all amenities and assign priority scores
@@ -416,6 +438,7 @@ const selectHighImpactPOIs = (amenities, inputLat, inputLng, maxResults = MAX_PO
       return {
         ...place,
         priorityScore,
+        primaryCategory: getPrimaryCategory(place.types),
         distance: place.geometry?.location ? calculateDistance(
           inputLat,
           inputLng,
@@ -430,8 +453,7 @@ const selectHighImpactPOIs = (amenities, inputLat, inputLng, maxResults = MAX_PO
     return [];
   }
 
-  // Sort by priority (lower priorityScore = higher priority)
-  // If priority is the same, sort by distance
+  // Sort by priority first (lower priorityScore = higher priority)
   const sortedAmenities = processedAmenities.sort((a, b) => {
     if (a.priorityScore !== b.priorityScore) {
       return a.priorityScore - b.priorityScore;
@@ -443,8 +465,63 @@ const selectHighImpactPOIs = (amenities, inputLat, inputLng, maxResults = MAX_PO
     return 0;
   });
 
-  // Return top maxResults
-  return sortedAmenities.slice(0, maxResults);
+  // Smart selection with diversity penalty
+  const selectedPOIs = [];
+  const categoryCount = {}; // Track how many of each category we've selected
+
+  for (const place of sortedAmenities) {
+    if (selectedPOIs.length >= maxResults) break;
+
+    const category = place.primaryCategory;
+    const currentCount = categoryCount[category] || 0;
+
+    // Calculate diversity penalty
+    // First of a category: no penalty
+    // Second of a category: moderate penalty (effective priority score * 1.5)
+    // Third of a category: heavy penalty (effective priority score * 3)
+    // Fourth+ of a category: severe penalty (effective priority score * 5)
+    let diversityPenalty = 1;
+    if (currentCount >= 3) {
+      diversityPenalty = 5; // Severe penalty for 4th+ duplicate
+    } else if (currentCount === 2) {
+      diversityPenalty = 3; // Heavy penalty for 3rd duplicate
+    } else if (currentCount === 1) {
+      diversityPenalty = 1.5; // Moderate penalty for 2nd duplicate
+    }
+
+    const adjustedPriorityScore = place.priorityScore * diversityPenalty;
+
+    // Check if this place should be included based on diversity
+    let shouldInclude = true;
+
+    // If we have room, always include the first of any category
+    if (currentCount === 0) {
+      shouldInclude = true;
+    } else {
+      // For duplicates, check if the adjusted priority is still competitive
+      // Compare against the worst currently selected item
+      if (selectedPOIs.length > 0) {
+        const worstSelected = selectedPOIs[selectedPOIs.length - 1];
+        const worstAdjustedScore = worstSelected.priorityScore * (categoryCount[worstSelected.primaryCategory] > 1 ? 1.5 : 1);
+
+        // Only include if this duplicate is significantly better than the worst selected
+        if (adjustedPriorityScore > worstAdjustedScore * 1.2) {
+          shouldInclude = false;
+        }
+      }
+    }
+
+    if (shouldInclude) {
+      selectedPOIs.push({
+        ...place,
+        adjustedPriorityScore,
+        diversityPenalty
+      });
+      categoryCount[category] = currentCount + 1;
+    }
+  }
+
+  return selectedPOIs;
 };
 
 /**
