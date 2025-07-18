@@ -27,19 +27,14 @@ const logoCache = new Map();
  * @returns {Promise<string|null>} Logo URL or null if not found
  */
 const fetchBrandLogo = async (domain) => {
-  console.log(`🌐 Attempting to fetch logo for domain: ${domain}`);
-
   // Check cache first
   if (logoCache.has(domain)) {
     const cachedResult = logoCache.get(domain);
-    console.log(`💾 Cache hit for ${domain}: ${cachedResult ? 'has logo' : 'no logo'}`);
     return cachedResult;
   }
 
   // Method 1: Try Brandfetch API with proper configuration
   try {
-    console.log(`📡 Making Brandfetch API request for: ${domain}`);
-
     const response = await fetch(`${BRANDFETCH_BASE_URL}/brands/${domain}`, {
       method: 'GET',
       headers: {
@@ -51,67 +46,50 @@ const fetchBrandLogo = async (domain) => {
       credentials: 'omit'
     });
 
-    console.log(`📊 Brandfetch response: ${response.status} ${response.statusText}`);
-
     if (response.ok) {
       const data = await response.json();
-      console.log(`📦 Brandfetch data received for ${domain}:`, data);
-
       const logoUrl = extractLogoFromBrandfetchData(data, domain);
       if (logoUrl) {
-        console.log(`✅ Brandfetch logo found for ${domain}: ${logoUrl}`);
         logoCache.set(domain, logoUrl);
         return logoUrl;
       }
     } else {
-      const errorText = await response.text();
-      console.log(`❌ Brandfetch API error ${response.status}: ${errorText}`);
-
       // Try alternative domain formats for 404 errors
       if (response.status === 404) {
         const altDomain = domain.replace('www.', '');
         if (altDomain !== domain) {
-          console.log(`🔄 Trying alternative domain: ${altDomain}`);
           return await fetchBrandLogoAlternative(altDomain);
         }
       }
     }
   } catch (error) {
-    console.error(`💥 Brandfetch API network error for ${domain}:`, error);
-
     // Check if it's a CORS error and try workaround
     if (error.message.includes('CORS') || error.message.includes('fetch')) {
-      console.log(`🚨 CORS detected, trying proxy approach for ${domain}`);
       return await fetchBrandLogoWithProxy(domain);
     }
   }
 
   // Method 2: Try Clearbit as immediate fallback
   try {
-    console.log(`🔄 Brandfetch failed, trying Clearbit for: ${domain}`);
     const clearbitUrl = `https://logo.clearbit.com/${domain}`;
-
     const logoExists = await testImageUrl(clearbitUrl, 2000);
     if (logoExists) {
-      console.log(`✅ Clearbit logo found for ${domain}`);
       logoCache.set(domain, clearbitUrl);
       return clearbitUrl;
     }
   } catch (error) {
-    console.error(`💥 Clearbit error for ${domain}:`, error.message);
+    // Silent fallback
   }
 
   // Method 3: Google Favicon as last resort
   try {
-    console.log(`🔄 Using Google Favicon fallback for: ${domain}`);
     const faviconUrl = `https://www.google.com/s2/favicons?sz=64&domain=${domain}`;
     logoCache.set(domain, faviconUrl);
     return faviconUrl;
   } catch (error) {
-    console.error(`💥 Google Favicon error for ${domain}:`, error.message);
+    // Silent fallback
   }
 
-  console.log(`❌ All methods failed for ${domain}`);
   logoCache.set(domain, null);
   return null;
 };
@@ -141,7 +119,7 @@ const fetchBrandLogoAlternative = async (domain) => {
       }
     }
   } catch (error) {
-    console.error(`Alternative domain fetch failed: ${error.message}`);
+    // Silent fallback
   }
   return null;
 };
@@ -170,7 +148,7 @@ const fetchBrandLogoWithProxy = async (domain) => {
       }
     }
   } catch (error) {
-    console.error(`Proxy fetch failed: ${error.message}`);
+    // Silent fallback
   }
   return null;
 };
@@ -782,12 +760,10 @@ const MapboxMap = ({ coords, amenities = [], className = '' }) => {
       // Method 1: Direct canvas copy (should work with preserveDrawingBuffer: true)
       try {
         const mapCanvas = map.current.getCanvas();
-        console.log('Attempting direct canvas copy...');
         ctx.drawImage(mapCanvas, 0, 0);
         mapCaptured = true;
-        console.log('✅ Direct canvas copy successful');
       } catch (directError) {
-        console.log('❌ Direct canvas copy failed:', directError);
+        // Silent fallback
       }
 
       // Method 2: Canvas toDataURL approach
@@ -795,31 +771,27 @@ const MapboxMap = ({ coords, amenities = [], className = '' }) => {
         try {
           const mapCanvas = map.current.getCanvas();
           const mapDataURL = mapCanvas.toDataURL('image/png');
-          console.log('Attempting canvas toDataURL...');
 
           const mapImg = new Image();
           await new Promise((resolve, reject) => {
             mapImg.onload = () => {
               ctx.drawImage(mapImg, 0, 0);
               mapCaptured = true;
-              console.log('✅ Canvas toDataURL successful');
               resolve();
             };
             mapImg.onerror = (err) => {
-              console.log('❌ Canvas toDataURL failed:', err);
               reject(err);
             };
             mapImg.src = mapDataURL;
           });
         } catch (dataURLError) {
-          console.log('❌ Canvas toDataURL method failed:', dataURLError);
+          // Silent fallback
         }
       }
 
       // Method 3: Force map re-render and capture
       if (!mapCaptured) {
         try {
-          console.log('Attempting force re-render...');
           // Force map to re-render
           map.current.resize();
           await new Promise(resolve => setTimeout(resolve, 500));
@@ -827,15 +799,13 @@ const MapboxMap = ({ coords, amenities = [], className = '' }) => {
           const mapCanvas = map.current.getCanvas();
           ctx.drawImage(mapCanvas, 0, 0);
           mapCaptured = true;
-          console.log('✅ Force re-render successful');
         } catch (rerenderError) {
-          console.log('❌ Force re-render failed:', rerenderError);
+          // Silent fallback
         }
       }
 
       // Method 4: Fallback with styled background
       if (!mapCaptured) {
-        console.log('⚠️ All map capture methods failed, using styled background');
         // Create a map-like background
         const gradient = ctx.createLinearGradient(0, 0, 0, mapHeight);
         gradient.addColorStop(0, '#e6f3ff');
@@ -878,7 +848,6 @@ const MapboxMap = ({ coords, amenities = [], className = '' }) => {
         }
 
         // Find and log intersections between grid lines
-        console.log('🔍 Analyzing grid line intersections...');
         findAndLogIntersections(gridLines, 'grid');
       }
 
