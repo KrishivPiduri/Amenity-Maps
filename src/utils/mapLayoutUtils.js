@@ -1,5 +1,6 @@
-import { getPoiDisplayData, CATEGORY_ICONS } from '../utils/poiUtils.js';
-import { findAndLogIntersections } from '../utils/geometryUtils.js';
+import mapboxgl from 'mapbox-gl';
+import { getPoiDisplayData, CATEGORY_ICONS } from './poiUtils.js';
+import { findAndLogIntersections } from './geometryUtils.js';
 
 // Configuration constants
 export const LABEL_MIN_HEIGHT = 50;
@@ -222,7 +223,6 @@ const placeLabels = async (poiList, side, mapWidth, mapHeight, overlayNode) => {
               alt="${poi.name} logo" 
               crossorigin="anonymous"
               onload="this.style.opacity='1'"
-              onerror="this.style.display='none'; this.nextElementSibling.style.display='block'"
               >
             <div style="display: none; font-size: 20px; flex-shrink: 0;">${CATEGORY_ICONS[poi.types?.[0]] || CATEGORY_ICONS.default}</div>
             <div style="font-size: 12px; line-height: 1.3; font-weight: 600; word-wrap: break-word; flex: 1; overflow-wrap: break-word; hyphens: auto;">
