@@ -1,6 +1,5 @@
 import mapboxgl from 'mapbox-gl';
 import { getPoiDisplayData, CATEGORY_ICONS } from './poiUtils.js';
-import { findAndLogIntersections, findAndResolveIntersections } from './geometryUtils.js';
 
 // Configuration constants
 export const LABEL_MIN_HEIGHT = 50;
@@ -9,8 +8,262 @@ export const LABEL_WIDTH = 180;
 export const V_SPACE = 10;
 export const PADDING = 20;
 
+// Simulated Annealing Parameters
+export const SA_PARAMS = {
+  initialTemperature: 1000,
+  coolingRate: 0.95,
+  minTemperature: 1,
+  maxIterations: 1000,
+  maxIterationsWithoutImprovement: 100
+};
+
 /**
- * Generate professional map layout with labels and connector lines
+ * Check if two rectangles overlap
+ */
+const rectanglesOverlap = (rect1, rect2) => {
+  return !(rect1.x + rect1.width < rect2.x ||
+           rect2.x + rect2.width < rect1.x ||
+           rect1.y + rect1.height < rect2.y ||
+           rect2.y + rect2.height < rect1.y);
+};
+
+/**
+ * Check if two line segments intersect
+ */
+const linesIntersect = (line1, line2) => {
+  const { x: x1, y: y1 } = line1.from;
+  const { x: x2, y: y2 } = line1.to;
+  const { x: x3, y: y3 } = line2.from;
+  const { x: x4, y: y4 } = line2.to;
+
+  const denom = (x1 - x2) * (y3 - y4) - (y1 - y2) * (x3 - x4);
+  if (Math.abs(denom) < 1e-10) return false;
+
+  const t = ((x1 - x3) * (y3 - y4) - (y1 - y3) * (x3 - x4)) / denom;
+  const u = -((x1 - x2) * (y1 - y3) - (y1 - y2) * (x1 - x3)) / denom;
+
+  return t >= 0 && t <= 1 && u >= 0 && u <= 1;
+};
+
+/**
+ * Check if a line passes through a rectangle
+ */
+const linePassesThroughRectangle = (line, rect) => {
+  const { x, y, width, height } = rect;
+  const corners = [
+    { x, y },
+    { x: x + width, y },
+    { x: x + width, y: y + height },
+    { x, y: y + height }
+  ];
+
+  // Check if line intersects any edge of the rectangle
+  const edges = [
+    { from: corners[0], to: corners[1] },
+    { from: corners[1], to: corners[2] },
+    { from: corners[2], to: corners[3] },
+    { from: corners[3], to: corners[0] }
+  ];
+
+  return edges.some(edge => linesIntersect(line, edge));
+};
+
+/**
+ * Calculate the energy (cost) of a layout configuration
+ */
+const calculateEnergy = (labels, lines, mapWidth, mapHeight) => {
+  let energy = 0;
+
+  // Penalty for overlapping labels
+  for (let i = 0; i < labels.length; i++) {
+    for (let j = i + 1; j < labels.length; j++) {
+      if (rectanglesOverlap(labels[i].rect, labels[j].rect)) {
+        energy += 1000; // High penalty for overlapping labels
+      }
+    }
+  }
+
+  // Penalty for intersecting lines
+  for (let i = 0; i < lines.length; i++) {
+    for (let j = i + 1; j < lines.length; j++) {
+      if (linesIntersect(lines[i], lines[j])) {
+        energy += 500; // Medium penalty for intersecting lines
+      }
+    }
+  }
+
+  // Penalty for lines passing through labels
+  for (const line of lines) {
+    for (const label of labels) {
+      if (linePassesThroughRectangle(line, label.rect)) {
+        energy += 750; // High penalty for lines through labels
+      }
+    }
+  }
+
+  // Penalty for labels going out of bounds
+  for (const label of labels) {
+    if (label.rect.x < 0 || label.rect.y < 0 ||
+        label.rect.x + label.rect.width > mapWidth ||
+        label.rect.y + label.rect.height > mapHeight) {
+      energy += 2000; // Very high penalty for out of bounds
+    }
+  }
+
+  // Preference for shorter connector lines
+  for (const line of lines) {
+    const length = Math.sqrt(
+      Math.pow(line.to.x - line.from.x, 2) +
+      Math.pow(line.to.y - line.from.y, 2)
+    );
+    energy += length * 0.1; // Small penalty for longer lines
+  }
+
+  // Preference for labels near screen edges (easier to read)
+  for (const label of labels) {
+    const centerX = label.rect.x + label.rect.width / 2;
+    const centerY = label.rect.y + label.rect.height / 2;
+    const distanceFromEdge = Math.min(
+      centerX,
+      mapWidth - centerX,
+      centerY,
+      mapHeight - centerY
+    );
+    if (distanceFromEdge > 100) {
+      energy += (distanceFromEdge - 100) * 0.5; // Prefer labels near edges
+    }
+  }
+
+  return energy;
+};
+
+/**
+ * Generate a random neighboring solution
+ */
+const generateNeighbor = (labels, lines, poiPoints, mapWidth, mapHeight) => {
+  const newLabels = [...labels];
+  const newLines = [...lines];
+
+  // Randomly select a label to move
+  const labelIndex = Math.floor(Math.random() * newLabels.length);
+  const label = { ...newLabels[labelIndex] };
+
+  // Generate a random new position within bounds
+  const maxX = mapWidth - label.rect.width;
+  const maxY = mapHeight - label.rect.height;
+
+  const newX = Math.random() * maxX;
+  const newY = Math.random() * maxY;
+
+  label.rect = {
+    ...label.rect,
+    x: newX,
+    y: newY
+  };
+
+  newLabels[labelIndex] = label;
+
+  // Update corresponding line
+  const poiPoint = poiPoints[labelIndex].point;
+  newLines[labelIndex] = {
+    from: { x: poiPoint.x, y: poiPoint.y },
+    to: {
+      x: newX + label.rect.width / 2,
+      y: newY + label.rect.height / 2
+    }
+  };
+
+  return { labels: newLabels, lines: newLines };
+};
+
+/**
+ * Simulated Annealing algorithm for optimal label placement
+ */
+const simulatedAnnealing = (poiPoints, mapWidth, mapHeight) => {
+  // Initialize random solution
+  let currentLabels = poiPoints.map((poi, index) => {
+    const width = Math.max(LABEL_WIDTH, Math.min(poi.poi.name.length * 8 + 60, 300));
+    const height = Math.max(LABEL_MIN_HEIGHT, Math.min(Math.ceil(poi.poi.name.length / 20) * 20 + 30, LABEL_MAX_HEIGHT));
+
+    return {
+      poi: poi.poi,
+      rect: {
+        x: Math.random() * (mapWidth - width),
+        y: Math.random() * (mapHeight - height),
+        width,
+        height
+      }
+    };
+  });
+
+  let currentLines = currentLabels.map((label, index) => ({
+    from: { x: poiPoints[index].point.x, y: poiPoints[index].point.y },
+    to: {
+      x: label.rect.x + label.rect.width / 2,
+      y: label.rect.y + label.rect.height / 2
+    }
+  }));
+
+  let currentEnergy = calculateEnergy(currentLabels, currentLines, mapWidth, mapHeight);
+  let bestLabels = [...currentLabels];
+  let bestLines = [...currentLines];
+  let bestEnergy = currentEnergy;
+
+  let temperature = SA_PARAMS.initialTemperature;
+  let iterationsWithoutImprovement = 0;
+
+  console.log('🔥 Starting Simulated Annealing optimization...');
+  console.log(`Initial energy: ${currentEnergy.toFixed(2)}`);
+
+  for (let iteration = 0; iteration < SA_PARAMS.maxIterations; iteration++) {
+    // Generate neighbor solution
+    const neighbor = generateNeighbor(currentLabels, currentLines, poiPoints, mapWidth, mapHeight);
+    const neighborEnergy = calculateEnergy(neighbor.labels, neighbor.lines, mapWidth, mapHeight);
+
+    // Calculate acceptance probability
+    const deltaE = neighborEnergy - currentEnergy;
+    const acceptanceProbability = deltaE < 0 ? 1 : Math.exp(-deltaE / temperature);
+
+    // Accept or reject the neighbor
+    if (Math.random() < acceptanceProbability) {
+      currentLabels = neighbor.labels;
+      currentLines = neighbor.lines;
+      currentEnergy = neighborEnergy;
+      iterationsWithoutImprovement = 0;
+
+      // Update best solution if this is better
+      if (neighborEnergy < bestEnergy) {
+        bestLabels = [...neighbor.labels];
+        bestLines = [...neighbor.lines];
+        bestEnergy = neighborEnergy;
+        console.log(`✅ New best solution found at iteration ${iteration}: energy = ${bestEnergy.toFixed(2)}`);
+      }
+    } else {
+      iterationsWithoutImprovement++;
+    }
+
+    // Cool down temperature
+    temperature *= SA_PARAMS.coolingRate;
+
+    // Early termination conditions
+    if (temperature < SA_PARAMS.minTemperature ||
+        iterationsWithoutImprovement > SA_PARAMS.maxIterationsWithoutImprovement) {
+      console.log(`🛑 Optimization terminated at iteration ${iteration}`);
+      break;
+    }
+
+    // Progress logging
+    if (iteration % 100 === 0) {
+      console.log(`Iteration ${iteration}: current energy = ${currentEnergy.toFixed(2)}, temperature = ${temperature.toFixed(2)}`);
+    }
+  }
+
+  console.log(`🎯 Final best energy: ${bestEnergy.toFixed(2)}`);
+  return { labels: bestLabels, lines: bestLines };
+};
+
+/**
+ * Generate professional map layout with labels and connector lines using Simulated Annealing
  * @param {Object} map - Mapbox map instance
  * @param {Object} coords - Center coordinates
  * @param {Array} amenities - Array of amenity objects
@@ -96,26 +349,18 @@ export const generateProfessionalMapLayout = async (map, coords, amenities, mapC
     overlayNode.appendChild(marker);
   });
 
-  // Step 6: Smart label layout algorithm
+  // Step 6: Use Simulated Annealing for optimal label placement
+  console.log('🧠 Using Simulated Annealing for intelligent label placement...');
   const mapWidth = mapContainer.clientWidth;
   const mapHeight = mapContainer.clientHeight;
 
-  // Divide POIs by screen position
-  const leftPois = poiPoints
-    .filter(p => p.point.x < mapWidth / 2)
-    .sort((a, b) => a.point.y - b.point.y);
+  const { labels: optimizedLabels, lines: optimizedLines } = simulatedAnnealing(
+    poiPoints,
+    mapWidth,
+    mapHeight
+  );
 
-  const rightPois = poiPoints
-    .filter(p => p.point.x >= mapWidth / 2)
-    .sort((a, b) => a.point.y - b.point.y);
-
-  // Place labels on both sides (now async)
-  const [leftLines, rightLines] = await Promise.all([
-    placeLabels(leftPois, 'left', mapWidth, mapHeight, overlayNode),
-    placeLabels(rightPois, 'right', mapWidth, mapHeight, overlayNode)
-  ]);
-
-  // Step 7: Draw SVG connector lines with intersection resolution
+  // Step 7: Draw optimized connector lines FIRST (so they appear behind labels)
   const svgNs = "http://www.w3.org/2000/svg";
   const svg = document.createElementNS(svgNs, "svg");
   svg.setAttribute('width', `${mapWidth}`);
@@ -125,105 +370,36 @@ export const generateProfessionalMapLayout = async (map, coords, amenities, mapC
     top: 0;
     left: 0;
     pointer-events: none;
+    z-index: 1001;
   `;
 
-  // Collect all connector line coordinates for intersection detection and resolution
-  const allConnectorLines = [...leftLines, ...rightLines];
-
-  // Resolve intersections and get separated line arrays
-  console.log('🔍 Analyzing and resolving connector line intersections...');
-  const { originalLines, alternativeLines, hasIntersections } = findAndResolveIntersections(allConnectorLines, 'connector');
-
-  // Draw original lines (non-intersecting) in black
-  originalLines.forEach(({ from, to }) => {
-    const line = document.createElementNS(svgNs, 'line');
-    line.setAttribute('x1', `${from.x}`);
-    line.setAttribute('y1', `${from.y}`);
-    line.setAttribute('x2', `${to.x}`);
-    line.setAttribute('y2', `${to.y}`);
-    line.setAttribute('stroke', 'black');
-    line.setAttribute('stroke-width', '1.5');
-    line.setAttribute('opacity', '0.8');
-    svg.appendChild(line);
+  optimizedLines.forEach(line => {
+    const lineElement = document.createElementNS(svgNs, 'line');
+    lineElement.setAttribute('x1', `${line.from.x}`);
+    lineElement.setAttribute('y1', `${line.from.y}`);
+    lineElement.setAttribute('x2', `${line.to.x}`);
+    lineElement.setAttribute('y2', `${line.to.y}`);
+    lineElement.setAttribute('stroke', 'black');
+    lineElement.setAttribute('stroke-width', '1.5');
+    lineElement.setAttribute('opacity', '0.8');
+    svg.appendChild(lineElement);
   });
 
-  // Draw alternative lines (resolved intersections) in red
-  alternativeLines.forEach(({ from, to, originalIndex }) => {
-    const line = document.createElementNS(svgNs, 'line');
-    line.setAttribute('x1', `${from.x}`);
-    line.setAttribute('y1', `${from.y}`);
-    line.setAttribute('x2', `${to.x}`);
-    line.setAttribute('y2', `${to.y}`);
-    line.setAttribute('stroke', 'red');
-    line.setAttribute('stroke-width', '2');
-    line.setAttribute('opacity', '0.9');
-    line.setAttribute('stroke-dasharray', '5,3'); // Dashed line to make it more obvious
-    svg.appendChild(line);
-  });
-
-  // Add legend if there are alternative lines
-  if (hasIntersections) {
-    const legend = document.createElement('div');
-    legend.style.cssText = `
-      position: absolute;
-      top: 10px;
-      right: 10px;
-      background: rgba(255, 255, 255, 0.9);
-      padding: 8px;
-      border-radius: 4px;
-      box-shadow: 0 2px 4px rgba(0,0,0,0.2);
-      font-size: 12px;
-      font-family: Arial, sans-serif;
-      z-index: 1002;
-    `;
-    legend.innerHTML = `
-      <div style="margin-bottom: 4px;"><span style="color: black; font-weight: bold;">━</span> Original lines</div>
-      <div><span style="color: red; font-weight: bold;">┅</span> Resolved intersections</div>
-    `;
-    overlayNode.appendChild(legend);
-  }
-
+  // Add SVG first so lines are behind labels
   overlayNode.appendChild(svg);
-};
 
-/**
- * Label placement function with async logo fetching and dynamic sizing
- * @param {Array} poiList - List of POI objects with points
- * @param {string} side - 'left' or 'right'
- * @param {number} mapWidth - Map container width
- * @param {number} mapHeight - Map container height
- * @param {HTMLElement} overlayNode - Overlay container element
- * @returns {Promise<Array>} Array of connector line coordinates
- */
-const placeLabels = async (poiList, side, mapWidth, mapHeight, overlayNode) => {
-  let currentY = 0; // Remove vertical padding constraint
-  const labelPromises = [];
+  // Step 8: Create optimized labels AFTER lines (so they appear on top)
+  const labelPromises = optimizedLabels.map(async (labelConfig, index) => {
+    const { poi, rect } = labelConfig;
 
-  // First pass: create all labels with placeholders and collect promises
-  for (const { poi, point } of poiList) {
-    // Calculate dynamic label width based on text length
-    const textLength = poi.name.length;
-    const dynamicWidth = Math.max(LABEL_WIDTH, Math.min(textLength * 8 + 60, 300)); // Min 180px, max 300px
-    // Calculate dynamic height - allow more height for longer text
-    const estimatedLines = Math.ceil(textLength / 20); // Rough estimate of text lines
-    const dynamicHeight = Math.max(LABEL_MIN_HEIGHT, Math.min(estimatedLines * 20 + 30, LABEL_MAX_HEIGHT));
-
-    const labelX = side === 'left' ?
-      PADDING :
-      mapWidth - dynamicWidth - PADDING;
-
-    // Remove vertical padding constraint - allow labels to go to edge
-    const labelY = Math.min(currentY, mapHeight - dynamicHeight);
-    currentY += dynamicHeight + V_SPACE;
-
-    // Create label element with loading state and dynamic dimensions
+    // Create label element
     const label = document.createElement('div');
     label.style.cssText = `
       position: absolute;
-      left: ${labelX}px;
-      top: ${labelY}px;
-      width: ${dynamicWidth}px;
-      min-height: ${dynamicHeight}px;
+      left: ${rect.x}px;
+      top: ${rect.y}px;
+      width: ${rect.width}px;
+      min-height: ${rect.height}px;
       max-height: ${LABEL_MAX_HEIGHT}px;
       background: white;
       border: 1px solid black;
@@ -233,9 +409,10 @@ const placeLabels = async (poiList, side, mapWidth, mapHeight, overlayNode) => {
       box-shadow: 0 2px 5px rgba(0,0,0,0.2);
       pointer-events: none;
       box-sizing: border-box;
+      z-index: 1002;
     `;
 
-    // Add loading placeholder with improved text styling
+    // Add loading placeholder
     label.innerHTML = `
       <div style="display: flex; align-items: flex-start; width: 100%; gap: 8px;">
         <div style="width: 35px; height: 35px; background: #f0f0f0; border-radius: 4px; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
@@ -249,9 +426,11 @@ const placeLabels = async (poiList, side, mapWidth, mapHeight, overlayNode) => {
 
     overlayNode.appendChild(label);
 
-    // Create promise to update label content
-    const labelPromise = getPoiDisplayData(poi).then(displayData => {
+    // Load display data and update label
+    try {
+      const displayData = await getPoiDisplayData(poi);
       let logoHtml = '';
+
       if (displayData.type === 'brand' && displayData.logo) {
         logoHtml = `
           <div style="display: flex; align-items: flex-start; width: 100%; gap: 8px;">
@@ -259,18 +438,17 @@ const placeLabels = async (poiList, side, mapWidth, mapHeight, overlayNode) => {
               style="height: 35px; width: auto; max-width: 60px; object-fit: contain; flex-shrink: 0;" 
               alt="${poi.name} logo" 
               crossorigin="anonymous"
-              onload="this.style.opacity='1'"
               >
-            <div style="display: none; font-size: 20px; flex-shrink: 0;">${CATEGORY_ICONS[poi.types?.[0]] || CATEGORY_ICONS.default}</div>
             <div style="font-size: 12px; line-height: 1.3; font-weight: 600; word-wrap: break-word; flex: 1; overflow-wrap: break-word; hyphens: auto;">
               ${poi.name}
             </div>
           </div>
         `;
-      } else if (displayData.type === 'category') {
+      } else {
+        const icon = displayData.icon || CATEGORY_ICONS[poi.types?.[0]] || CATEGORY_ICONS.default;
         logoHtml = `
           <div style="display: flex; align-items: flex-start; width: 100%; gap: 8px;">
-            <div style="font-size: 20px; flex-shrink: 0;">${displayData.icon}</div>
+            <div style="font-size: 20px; flex-shrink: 0;">${icon}</div>
             <div style="font-size: 12px; line-height: 1.3; font-weight: 600; word-wrap: break-word; flex: 1; overflow-wrap: break-word; hyphens: auto;">
               ${poi.name}
             </div>
@@ -278,15 +456,10 @@ const placeLabels = async (poiList, side, mapWidth, mapHeight, overlayNode) => {
         `;
       }
 
-      // Update label content
       label.innerHTML = logoHtml;
-
-      return displayData;
-    }).catch(error => {
+    } catch (error) {
       console.error('Error loading POI display data:', error);
-      // Fallback to category icon with improved text styling
-      const primaryType = poi.types?.[0] || 'default';
-      const icon = CATEGORY_ICONS[primaryType] || CATEGORY_ICONS.default;
+      const icon = CATEGORY_ICONS[poi.types?.[0]] || CATEGORY_ICONS.default;
       label.innerHTML = `
         <div style="display: flex; align-items: flex-start; width: 100%; gap: 8px;">
           <div style="font-size: 20px; flex-shrink: 0;">${icon}</div>
@@ -295,25 +468,25 @@ const placeLabels = async (poiList, side, mapWidth, mapHeight, overlayNode) => {
           </div>
         </div>
       `;
-    });
+    }
+  });
 
-    labelPromises.push(labelPromise);
+  // Wait for all labels to load
+  await Promise.allSettled(labelPromises);
 
-    // Store connector line coordinates with dynamic width
-    labelPromises[labelPromises.length - 1].lineCoords = {
-      from: { x: point.x, y: point.y },
-      to: {
-        x: side === 'left' ? labelX + dynamicWidth : labelX,
-        y: labelY + dynamicHeight / 2 // Use actual dynamic height for connector
-      }
-    };
-  }
-
-  // Wait for all logos to load or timeout after 3 seconds
-  await Promise.allSettled(labelPromises.map(p =>
-    Promise.race([p, new Promise(resolve => setTimeout(resolve, 3000))])
-  ));
-
-  // Return connector line coordinates
-  return labelPromises.map(promise => promise.lineCoords);
+  // Add optimization info legend (highest z-index)
+  const infoLegend = document.createElement('div');
+  infoLegend.style.cssText = `
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    background: rgba(255, 255, 255, 0.9);
+    padding: 8px;
+    border-radius: 4px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+    font-size: 12px;
+    font-family: Arial, sans-serif;
+    z-index: 1003;
+  `;
+  overlayNode.appendChild(infoLegend);
 };
