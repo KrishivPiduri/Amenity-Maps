@@ -1,201 +1,105 @@
 // ===== CONFIGURATION =====
 const API_KEY = "AIzaSyBnxpK2n_vnXX5CoDMN6mFk3rgJ2Mi6S24";
 
-// Priority list - higher on the list = higher priority
-const priority = [
-  "grocery_store",
-  "supermarket",
-  "grocery_or_supermarket",
-  "establishment",
-  "store",
-  "pharmacy",
-  "hospital",
-  "doctor",
-  "dentist",
-  "medical_lab",
-  "dental_clinic",
-  "bank",
-  "atm",
-  "finance",
-  "post_office",
-  "library",
-  "secondary_school",
-  "primary_school",
-  "school",
-  "university",
-  "park",
-  "natural_features",
-  "restaurant",
-  "meal_takeaway",
-  "meal_delivery",
-  "food",
-  "cafe",
-  "coffee_shop",
-  "bakery",
-  "ice_cream_shop",
-  "fine_dining_restaurant",
-  "brunch_restaurant",
-  "vegetarian_restaurant",
-  "vegan_restaurant",
-  "wine_bar",
-  "tea_house",
-  "book_store",
-  "shopping_mall",
-  "department_store",
-  "home_goods_store",
-  "furniture_store",
-  "hardware_store",
-  "electronics_store",
-  "pet_store",
-  "fitness_center",
-  "gym",
-  "yoga_studio",
-  "spa",
-  "massage",
-  "beauty_salon",
-  "hair_salon",
-  "nail_salon",
-  "barber_shop",
-  "public_transport",
-  "subway_station",
-  "train_station",
-  "bus_station",
-  "light_rail_station",
-  "transit_station",
-  "tourist_attraction",
-  "museum",
-  "art_gallery",
-  "concert_hall",
-  "performing_arts_theater",
-  "cultural_center",
-  "church",
-  "synagogue",
-  "mosque",
-  "hindu_temple",
-  "golf_course",
-  "swimming_pool",
-  "zoo",
-  "dog_park",
-  "botanical_garden",
-  "community_center",
-  "senior_center",
-  "convenience_store",
-  "food_store",
-  "gift_shop",
-  "clothing_store",
-  "shoe_store",
-  "liquor_store",
-  "candy_store",
-  "market",
-  "warehouse_store",
-  "auto_parts_store",
-  "car_repair",
-  "car_wash",
-  "gas_station",
-  "parking",
-  "laundry",
-  "locksmith",
-  "courier_service",
-  "storage",
-  "moving_company",
-  "plumber",
-  "electrician",
-  "roofing_contractor",
-  "real_estate_agency",
-  "insurance_agency",
-  "lawyer",
-  "consultant",
-  "city_hall",
-  "government_office",
-  "fire_station",
-  "police",
-  "courthouse",
-  "cemetery",
-  "funeral_home",
-  "embassy",
-  "neighborhood_police_station",
-  "wellness_center",
-  "skin_care_clinic",
-  "sauna",
-  "tanning_studio",
-  "makeup_artist",
-  "florist",
-  "art_studio",
-  "sculpture",
-  "historical_place",
-  "historical_landmark",
-  "monument",
-  "planetarium",
-  "observation_deck",
-  "movie_theater",
-  "video_arcade",
-  "amusement_park",
-  "casino",
-  "night_club",
-  "bar",
-  "karaoke",
-  "comedy_club",
-  "dog_cafe",
-  "cat_cafe",
-  "fast_food_restaurant",
-  "hamburger_restaurant",
-  "pizza_restaurant",
-  "barbecue_restaurant",
-  "chinese_restaurant",
-  "indian_restaurant",
-  "japanese_restaurant",
-  "korean_restaurant",
-  "thai_restaurant",
-  "turkish_restaurant",
-  "mexican_restaurant",
-  "greek_restaurant",
-  "french_restaurant",
-  "spanish_restaurant",
-  "lebanese_restaurant",
-  "middle_eastern_restaurant",
-  "american_restaurant",
-  "asian_restaurant",
-  "ramen_restaurant",
-  "sushi_restaurant",
-  "dessert_shop",
-  "donut_shop",
-  "bagel_shop",
-  "confectionery",
-  "buffet_restaurant",
-  "acai_shop",
-  "juice_shop",
-  "smoothie_shop",
-  "warehouse",
-  "auto_repair",
-  "car_dealer",
-  "car_rental",
-  "truck_stop",
-  "electric_vehicle_charging_station",
-  "rest_stop",
-  "heliport",
-  "airport",
-  "international_airport",
-  "airstrip",
-  "taxi_stand",
-  "bike_share_station",
-  "ferry_terminal",
-  "transit_depot"
-];
-
-// Maximum number of POIs to return
-const MAX_POIS = 8;
-
-// Search radius - 2km for relevance
-const DEFAULT_SEARCH_RADIUS = 2000; // 2km in meters
-
-// Search keywords for broad search
-const AMENITY_KEYWORDS = [
-  'grocery', 'supermarket', 'school', 'hospital', 'shopping_mall',
-  'pharmacy', 'restaurant', 'transit_station', 'park', 'bank', 'cafe'
-];
+// Search radius - 1 mile for relevance
+const DEFAULT_SEARCH_RADIUS = 1609; // 1 mile in meters (1.0 mile * 1609.34)
 
 // Constants for API calls
 const PAGINATION_DELAY_MS = 200;
+
+// ===== FILTERING CONFIGURATION =====
+
+// Updated parameters to match the new pseudocode
+const R_MAX = 2.0; // miles radius
+const MIN_RATING = 4.0;
+const MIN_REVIEWS = 50;
+const MAX_CANDIDATES = 30; // HARD LIMIT on how many POIs we'll ever score
+const DESIRED_COUNT = 8; // final map count (6–8)
+
+// Brand list for scoring (known restaurant/retail chains)
+const BRAND_LIST = new Set([
+  'starbucks', 'whole foods', 'trader joe\'s', 'target', 'walmart', 'cvs', 'walgreens',
+  'mcdonald\'s', 'burger king', 'subway', 'kfc', 'pizza hut', 'domino\'s', 'taco bell',
+  'wendy\'s', 'popeyes', 'chipotle', 'panera bread', 'sonic', 'sonic drive-in',
+  'dunkin\'', 'dunkin\' donuts', 'tim hortons', 'chick-fil-a', 'five guys',
+  'in-n-out', 'shake shack', 'white castle', 'arby\'s', 'dairy queen',
+  'baskin-robbins', 'coldstone creamery', 'kroger', 'safeway',
+  '7-eleven', 'circle k', 'shell', 'bp', 'exxon', 'chevron', 'mobil',
+  'texaco', 'speedway', 'wawa', 'sheetz', 'rite aid'
+]);
+
+// Category weights for scoring (fit per audience)
+const CATEGORY_WEIGHTS = {
+  'grocery_or_supermarket': 5,
+  'gym': 4,
+  'transit_station': 4,
+  'cafe': 3,
+  'restaurant': 3,
+  'meal_takeaway': 3,
+  'bakery': 2,
+  'pharmacy': 3,
+  'convenience_store': 2,
+  'gas_station': 2,
+  'bank': 2,
+  'atm': 1,
+  'hospital': 3,
+  'doctor': 2,
+  'shopping_mall': 2,
+  'store': 2,
+  'clothing_store': 1,
+  'electronics_store': 1,
+  'hardware_store': 2,
+  'park': 3,
+  'tourist_attraction': 2,
+  'lodging': 1,
+  'school': 1,
+  'university': 2,
+  'library': 2,
+  'church': 1,
+  'synagogue': 1,
+  'mosque': 1
+};
+
+// Diversity caps in final selection
+const CATEGORY_CAPS = {
+  'grocery_or_supermarket': 2,
+  'gym': 1,
+  'transit_station': 1,
+  'cafe': 2,
+  'restaurant': 1,
+  'meal_takeaway': 1,
+  'bakery': 1,
+  'pharmacy': 1,
+  'convenience_store': 1,
+  'gas_station': 1,
+  'bank': 1,
+  'atm': 1,
+  'hospital': 1,
+  'doctor': 1,
+  'shopping_mall': 1,
+  'store': 1,
+  'clothing_store': 1,
+  'electronics_store': 1,
+  'hardware_store': 1,
+  'park': 2,
+  'tourist_attraction': 1,
+  'lodging': 1,
+  'school': 1,
+  'university': 1,
+  'library': 1,
+  'church': 1,
+  'synagogue': 1,
+  'mosque': 1
+};
+
+// Updated scoring weights
+const WEIGHTS = {
+  brand: 0.4,
+  rating: 0.2,
+  popularity: 0.2,
+  distance: 0.1,
+  category: 0.1
+};
 
 // ===== GOOGLE MAPS API LOADING =====
 let googleMapsLoaded = false;
@@ -377,144 +281,251 @@ const fetchPlaceDetails = (placesService, place) => {
   });
 };
 
-// ===== SIMPLE POI SELECTION =====
+// ===== FILTERING UTILITY FUNCTIONS =====
 
 /**
- * Get priority score for a place based on its types
- * @param {Array} types - Place types from Google Places API
- * @returns {number} Priority score (lower number = higher priority)
- */
-const getPriorityScore = (types = []) => {
-  if (!types || types.length === 0) return 999;
-
-  // Find the highest priority type (lowest index in priority array)
-  let bestPriority = 999;
-  for (const type of types) {
-    const priorityIndex = priority.indexOf(type);
-    if (priorityIndex !== -1 && priorityIndex < bestPriority) {
-      bestPriority = priorityIndex;
-    }
-  }
-
-  return bestPriority;
-};
-
-/**
- * Get the primary category for a place (the highest priority type)
- * @param {Array} types - Place types from Google Places API
- * @returns {string} Primary category or the first type if not in priority list
- */
-const getPrimaryCategory = (types = []) => {
-  if (!types || types.length === 0) return 'unknown';
-
-  let bestPriority = 999;
-  let primaryCategory = types[0] || 'unknown';
-
-  for (const type of types) {
-    const priorityIndex = priority.indexOf(type);
-    if (priorityIndex !== -1 && priorityIndex < bestPriority) {
-      bestPriority = priorityIndex;
-      primaryCategory = type;
-    }
-  }
-
-  return primaryCategory;
-};
-
-/**
- * Calculate distance between two coordinates using Haversine formula
- * @param {number} lat1 - Latitude of first point
- * @param {number} lng1 - Longitude of first point
- * @param {number} lat2 - Latitude of second point
- * @param {number} lng2 - Longitude of second point
+ * Converts miles to meters
+ * @param {number} miles - Distance in miles
  * @returns {number} Distance in meters
  */
+const milesToMeters = (miles) => miles * 1609.34;
+
+/**
+ * Calculates the distance between two coordinates using Haversine formula
+ * @param {number} lat1 - First latitude
+ * @param {number} lng1 - First longitude
+ * @param {number} lat2 - Second latitude
+ * @param {number} lng2 - Second longitude
+ * @returns {number} Distance in miles
+ */
 const calculateDistance = (lat1, lng1, lat2, lng2) => {
-  const R = 6371e3; // Earth's radius in meters
-  const φ1 = lat1 * Math.PI/180;
-  const φ2 = lat2 * Math.PI/180;
-  const Δφ = (lat2-lat1) * Math.PI/180;
-  const Δλ = (lng2-lng1) * Math.PI/180;
+  const R = 3959; // Earth's radius in miles
+  const φ1 = lat1 * Math.PI / 180;
+  const φ2 = lat2 * Math.PI / 180;
+  const Δφ = (lat2 - lat1) * Math.PI / 180;
+  const Δλ = (lng2 - lng1) * Math.PI / 180;
 
   const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) +
           Math.cos(φ1) * Math.cos(φ2) *
           Math.sin(Δλ/2) * Math.sin(Δλ/2);
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
 
-  return R * c; // Distance in meters
+  return R * c; // Distance in miles
 };
 
 /**
- * Simple selection of top POIs based on priority list
- * @param {Array} amenities - Raw amenities from Places API
- * @param {number} inputLat - Input location latitude
- * @param {number} inputLng - Input location longitude
- * @param {number} maxResults - Maximum number of results to return (default: 8)
- * @returns {Array} Top priority POIs
+ * Pre-filters places based on quality and distance criteria
+ * @param {Array} places - Array of places to filter
+ * @param {number} centerLat - Center latitude for distance calculation
+ * @param {number} centerLng - Center longitude for distance calculation
+ * @returns {Array} Filtered places with distance_to_asset added
  */
-const selectHighImpactPOIs = (amenities, inputLat, inputLng, maxResults = MAX_POIS) => {
-  console.log(`🔍 Starting simple selection from ${amenities.length} total places`);
-
-  // Process all amenities and assign priority scores
-  const processedAmenities = amenities.map((place, index) => {
-    const priorityScore = getPriorityScore(place.types);
-    const primaryCategory = getPrimaryCategory(place.types);
-
-    const distance = place.geometry?.location ? calculateDistance(
-      inputLat,
-      inputLng,
-      place.geometry.location.lat(),
-      place.geometry.location.lng()
-    ) : null;
-
-    return {
-      ...place,
-      priorityScore,
-      primaryCategory,
-      distance
-    };
-  });
-
-  // Sort by priority (lower score = higher priority), then by distance
-  const sortedAmenities = processedAmenities.sort((a, b) => {
-    if (a.priorityScore !== b.priorityScore) {
-      return a.priorityScore - b.priorityScore;
+const preFilterPlaces = (places, centerLat, centerLng) => {
+  return places.filter(place => {
+    // Calculate distance if coordinates are available
+    let distanceToAsset = 0;
+    if (place.coordinates) {
+      distanceToAsset = calculateDistance(
+        centerLat, centerLng,
+        place.coordinates.lat, place.coordinates.lng
+      );
     }
-    // Same priority, sort by distance
-    if (a.distance && b.distance) {
-      return a.distance - b.distance;
-    }
-    return 0;
-  });
 
-  // Take the top N results
-  const selectedPOIs = sortedAmenities.slice(0, maxResults);
-
-  console.log(`🎉 Selected ${selectedPOIs.length} places:`);
-  selectedPOIs.forEach((place, idx) => {
-    const priorityLabel = place.priorityScore === 999 ? 'LOW PRIORITY' : `Priority ${place.priorityScore}`;
-    console.log(`   ${idx + 1}. ${place.name} (${place.primaryCategory}) - ${priorityLabel}`);
-  });
-
-  return selectedPOIs;
+    // Apply filters: rating >= MIN_RATING, reviews >= MIN_REVIEWS, distance <= R_MAX
+    return (
+      (place.rating || 0) >= MIN_RATING &&
+      (place.user_ratings_total || 0) >= MIN_REVIEWS &&
+      distanceToAsset <= R_MAX
+    );
+  }).map(place => ({
+    ...place,
+    distance_to_asset: place.coordinates ? calculateDistance(
+      centerLat, centerLng,
+      place.coordinates.lat, place.coordinates.lng
+    ) : 0
+  }));
 };
 
 /**
- * Main function to get nearby amenities
+ * Simple deduplication by name
+ * @param {Array} places - Array of places to deduplicate
+ * @returns {Array} Deduplicated places
+ */
+const dedupeByName = (places) => {
+  const nameMap = new Map();
+
+  places.forEach(place => {
+    const normalizedName = place.name?.toLowerCase().trim();
+    if (!normalizedName) return;
+
+    if (!nameMap.has(normalizedName)) {
+      nameMap.set(normalizedName, place);
+    }
+  });
+
+  return Array.from(nameMap.values());
+};
+
+/**
+ * Gets the primary category for a place
+ * @param {Array} types - Array of place types from Google Places
+ * @returns {string} Primary category
+ */
+const getPrimaryCategory = (types) => {
+  if (!types || types.length === 0) return 'other';
+
+  // Find the first type that has a weight defined
+  for (const type of types) {
+    if (CATEGORY_WEIGHTS[type]) {
+      return type;
+    }
+  }
+
+  // Return the first type if no weighted category found
+  return types[0] || 'other';
+};
+
+/**
+ * Checks if a place name matches a known brand
+ * @param {string} name - Place name
+ * @returns {boolean} True if it's a known brand
+ */
+const isBrand = (name) => {
+  if (!name) return false;
+  const normalizedName = name.toLowerCase().trim();
+  return BRAND_LIST.has(normalizedName);
+};
+
+/**
+ * Calculates quick proxy score for initial ranking
+ * @param {Object} place - Place object
+ * @returns {Object} Place with quick_score added
+ */
+const calculateQuickScore = (place) => {
+  const brandBonus = isBrand(place.name) ? 2.0 : 0.0;
+  const ratingBonus = place.rating ? (place.rating - MIN_RATING) : 0;
+  const popularityBonus = place.user_ratings_total ? Math.log1p(place.user_ratings_total) / 5.0 : 0;
+
+  const quickScore = brandBonus + ratingBonus + popularityBonus;
+
+  return {
+    ...place,
+    quick_score: quickScore
+  };
+};
+
+/**
+ * Calculates detailed scores for a place based on various factors
+ * @param {Object} place - Place object
+ * @param {number} maxReviews - Maximum review count for normalization
+ * @returns {Object} Place with detailed scoring properties
+ */
+const calculateDetailedScores = (place, maxReviews) => {
+  const primaryCategory = getPrimaryCategory(place.types);
+
+  // Brand score: 1 if known brand, 0 otherwise
+  const brandScore = isBrand(place.name) ? 1 : 0;
+
+  // Rating score: normalized between MIN_RATING and 5.0
+  const ratingScore = place.rating ?
+    (place.rating - MIN_RATING) / (5.0 - MIN_RATING) : 0;
+
+  // Popularity score: log1p normalization
+  const popularityScore = place.user_ratings_total && maxReviews > 0 ?
+    Math.log1p(place.user_ratings_total) / Math.log1p(maxReviews) : 0;
+
+  // Distance score: 1 - (distance / R_MAX)
+  const distanceScore = Math.max(0, 1 - (place.distance_to_asset / R_MAX));
+
+  // Category score: normalized category weight
+  const maxCategoryWeight = Math.max(...Object.values(CATEGORY_WEIGHTS));
+  const categoryScore = (CATEGORY_WEIGHTS[primaryCategory] || 1) / maxCategoryWeight;
+
+  // Total weighted score
+  const totalScore = (
+    WEIGHTS.brand * brandScore +
+    WEIGHTS.rating * ratingScore +
+    WEIGHTS.popularity * popularityScore +
+    WEIGHTS.distance * distanceScore +
+    WEIGHTS.category * categoryScore
+  );
+
+  return {
+    ...place,
+    type: primaryCategory, // Add 'type' field for consistency with pseudocode
+    primaryCategory,
+    brandScore,
+    ratingScore,
+    popularityScore,
+    distanceScore,
+    categoryScore,
+    score: totalScore
+  };
+};
+
+/**
+ * Applies diversity-enforced selection with fallback
+ * @param {Array} candidates - Sorted candidate places
+ * @param {number} desiredCount - Desired number of results
+ * @returns {Array} Diversity-enforced selection
+ */
+const diversityEnforcedSelection = (candidates, desiredCount) => {
+  const selected = [];
+  const counts = new Map();
+
+  // Sort by score (highest first)
+  const sortedCandidates = [...candidates].sort((a, b) => b.score - a.score);
+
+  // Primary selection with diversity caps
+  for (const place of sortedCandidates) {
+    const category = place.type;
+    const currentCount = counts.get(category) || 0;
+    const categoryLimit = CATEGORY_CAPS[category] || 1;
+
+    if (currentCount < categoryLimit) {
+      selected.push(place);
+      counts.set(category, currentCount + 1);
+
+      if (selected.length >= desiredCount) {
+        break;
+      }
+    }
+  }
+
+  // Fallback if underflow: allow one extra of top-scoring category
+  if (selected.length < desiredCount) {
+    const selectedIds = new Set(selected.map(p => p.id));
+
+    for (const place of sortedCandidates) {
+      if (!selectedIds.has(place.id)) {
+        selected.push(place);
+        if (selected.length >= desiredCount) {
+          break;
+        }
+      }
+    }
+  }
+
+  return selected;
+};
+
+// ===== MAIN EXPORT FUNCTION =====
+
+/**
+ * Main function to get all nearby amenities without filtering
  * @param {google.maps.places.PlacesService} placesService - Places service instance
  * @param {number} lat - Latitude coordinate
  * @param {number} lng - Longitude coordinate
  * @param {number} radius - Search radius in meters (default: 2000)
- * @returns {Promise<Array>} Array of top 8 amenities with details
+ * @returns {Promise<Array>} Array of all amenities with details
  */
 export const getNearbyAmenities = async (placesService, lat, lng, radius = DEFAULT_SEARCH_RADIUS) => {
   const location = new window.google.maps.LatLng(lat, lng);
 
-  // Configure search request
+  // Configure search request for broad search
   const request = {
     location: location,
     radius: radius,
-    keyword: AMENITY_KEYWORDS.join(' | '),
   };
 
   // Fetch all results from Places API
@@ -524,27 +535,135 @@ export const getNearbyAmenities = async (placesService, lat, lng, radius = DEFAU
     return [];
   }
 
-  // Select top POIs
-  const topPOIs = selectHighImpactPOIs(allAmenities, lat, lng, MAX_POIS);
+  console.log(`📍 Found ${allAmenities.length} places nearby - returning all results`);
 
-  if (topPOIs.length === 0) {
-    return [];
-  }
-
-  // Fetch detailed information for selected POIs
-  const detailedPOIPromises = topPOIs.map(place =>
+  // Fetch detailed information for all POIs
+  const detailedPOIPromises = allAmenities.map(place =>
     fetchPlaceDetails(placesService, place)
   );
 
-  const detailedPOIs = await Promise.all(detailedPOIPromises);
+  // Return all detailed POIs without filtering
+  return await Promise.all(detailedPOIPromises);
+};
 
-  // Return the detailed POIs
-  return detailedPOIs.map((detailed, index) => ({
-    ...detailed,
-    score: topPOIs[index].score,
-    distance: topPOIs[index].distance,
-    priority: topPOIs[index].priority
-  }));
+// ===== MAIN EXPORT FUNCTION (FILTERED) =====
+
+/**
+ * Main function to get filtered and scored nearby amenities
+ * Implements the complete filtering pipeline from the updated pseudocode
+ * Only applies complex filtering when there are more places than DESIRED_COUNT
+ * @param {google.maps.places.PlacesService} placesService - Places service instance
+ * @param {number} lat - Latitude coordinate
+ * @param {number} lng - Longitude coordinate
+ * @param {number} desiredCount - Desired number of results (default: DESIRED_COUNT)
+ * @returns {Promise<Array>} Array of filtered, scored, and diversity-capped amenities
+ */
+export const getFilteredNearbyAmenities = async (placesService, lat, lng, desiredCount = DESIRED_COUNT) => {
+  const location = new window.google.maps.LatLng(lat, lng);
+
+  // Step 1: FETCH & PREFILTER
+  // Fetch slightly beyond R_MAX (1.2x buffer)
+  const fetchRadius = milesToMeters(R_MAX * 1.2);
+  const request = {
+    location: location,
+    radius: fetchRadius,
+  };
+
+  console.log(`🔍 Starting filtered search with R_MAX: ${R_MAX} miles (${milesToMeters(R_MAX)}m), desired count: ${desiredCount}`);
+
+  // Fetch all results from Places API
+  const rawPlaces = await fetchAllPlacesResults(placesService, request);
+
+  if (rawPlaces.length === 0) {
+    console.log('❌ No places found in the area');
+    return [];
+  }
+
+  console.log(`📍 Found ${rawPlaces.length} raw places from Google Places API`);
+
+  // Fetch detailed information for all POIs
+  const detailedPOIPromises = rawPlaces.map(place =>
+    fetchPlaceDetails(placesService, place)
+  );
+  const detailedPlaces = await Promise.all(detailedPOIPromises);
+
+  // Pre-filter: keep only decent quality & within absolute max radius
+  console.log('🔧 Step 1: Pre-filtering places...');
+  let preFiltered = preFilterPlaces(detailedPlaces, lat, lng);
+  console.log(`✅ After pre-filtering: ${preFiltered.length} places (rating >= ${MIN_RATING}, reviews >= ${MIN_REVIEWS}, distance <= ${R_MAX} miles)`);
+
+  if (preFiltered.length === 0) {
+    console.log('❌ No places passed pre-filtering criteria');
+    return [];
+  }
+
+  // Dedupe by name
+  preFiltered = dedupeByName(preFiltered);
+  console.log(`✅ After deduplication: ${preFiltered.length} places`);
+
+  // EARLY RETURN: If we have desiredCount or fewer places, just return them all
+  if (preFiltered.length <= desiredCount) {
+    console.log(`🎯 Found ${preFiltered.length} places (≤ ${desiredCount}), returning all without complex filtering`);
+
+    // Add basic distance info and primary category for consistency
+    const basicResults = preFiltered.map(place => ({
+      ...place,
+      type: getPrimaryCategory(place.types),
+      primaryCategory: getPrimaryCategory(place.types)
+    }));
+
+    // Sort by rating and distance for a reasonable ordering
+    return basicResults.sort((a, b) => {
+      // Primary sort: rating (higher better)
+      if (b.rating !== a.rating) {
+        return (b.rating || 0) - (a.rating || 0);
+      }
+      // Secondary sort: distance (closer better)
+      return a.distance_to_asset - b.distance_to_asset;
+    });
+  }
+
+  // COMPLEX FILTERING: Only when we have more places than desired
+  console.log(`🧠 Found ${preFiltered.length} places (> ${desiredCount}), applying complex filtering algorithm...`);
+
+  // Step 2: INITIAL RANK & HARD TRUNCATION
+  console.log('🔧 Step 2: Initial ranking with quick proxy score...');
+
+  // Calculate quick proxy scores
+  let scoredPlaces = preFiltered.map(place => calculateQuickScore(place));
+
+  // Sort by quick_score and cap at MAX_CANDIDATES
+  let candidates = scoredPlaces
+    .sort((a, b) => b.quick_score - a.quick_score)
+    .slice(0, MAX_CANDIDATES);
+
+  console.log(`✅ After initial ranking & truncation: ${candidates.length} candidates (max: ${MAX_CANDIDATES})`);
+
+  // Step 3: DETAILED SCORING
+  console.log('🔧 Step 3: Calculating detailed scores...');
+  const maxReviews = Math.max(...candidates.map(p => p.user_ratings_total || 0));
+  candidates = candidates.map(place => calculateDetailedScores(place, maxReviews));
+
+  // Log scoring statistics
+  const avgScore = candidates.reduce((sum, p) => sum + p.score, 0) / candidates.length;
+  const brandCount = candidates.filter(p => p.brandScore > 0).length;
+  console.log(`✅ Detailed scoring complete - Avg score: ${avgScore.toFixed(3)}, Brands found: ${brandCount}/${candidates.length}`);
+
+  // Step 4: DIVERSITY-ENFORCED SELECTION
+  console.log('🔧 Step 4: Applying diversity-enforced selection...');
+  const selected = diversityEnforcedSelection(candidates, desiredCount);
+
+  // Log diversity statistics
+  const categoryBreakdown = selected.reduce((acc, place) => {
+    acc[place.type] = (acc[place.type] || 0) + 1;
+    return acc;
+  }, {});
+
+  console.log(`✅ Final selection: ${selected.length} places`);
+  console.log('📊 Category breakdown:', categoryBreakdown);
+
+  // Step 5: Return results sorted by score
+  return selected.sort((a, b) => b.score - a.score);
 };
 
 // ===== UTILITY FUNCTIONS =====

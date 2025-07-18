@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import './App.css'
-import { getCoordinatesFromAddress, getNearbyAmenities } from './services/locationService'
+import { getCoordinatesFromAddress, getFilteredNearbyAmenities } from './services/locationService'
 import CoordinatesDisplay from './components/CoordinatesDisplay'
 import AmenitiesDisplay from './components/AmenitiesDisplay'
 import MapboxMap from './components/MapboxMap'
@@ -67,7 +67,8 @@ function App() {
     setAmenitiesError(null);
 
     try {
-      const nearbyAmenities = await getNearbyAmenities(services.placesService, lat, lng, 2000);
+      // Use the new filtered function with default DESIRED_COUNT (8)
+      const nearbyAmenities = await getFilteredNearbyAmenities(services.placesService, lat, lng);
       setAmenities(nearbyAmenities);
     } catch (amenitiesErr) {
       setAmenitiesError(amenitiesErr.message);
