@@ -1,6 +1,6 @@
 import mapboxgl from 'mapbox-gl';
 import { getPoiDisplayData, CATEGORY_ICONS } from './poiUtils.js';
-import { findAndLogIntersections } from './geometryUtils.js';
+import { findAndLogIntersections, findAndResolveIntersections } from './geometryUtils.js';
 
 // Configuration constants
 export const LABEL_MIN_HEIGHT = 50;
@@ -115,7 +115,7 @@ export const generateProfessionalMapLayout = async (map, coords, amenities, mapC
     placeLabels(rightPois, 'right', mapWidth, mapHeight, overlayNode)
   ]);
 
-  // Step 7: Draw SVG connector lines
+  // Step 7: Draw SVG connector lines with intersection resolution
   const svgNs = "http://www.w3.org/2000/svg";
   const svg = document.createElementNS(svgNs, "svg");
   svg.setAttribute('width', `${mapWidth}`);
@@ -127,14 +127,15 @@ export const generateProfessionalMapLayout = async (map, coords, amenities, mapC
     pointer-events: none;
   `;
 
-  // Collect all connector line coordinates for intersection detection
+  // Collect all connector line coordinates for intersection detection and resolution
   const allConnectorLines = [...leftLines, ...rightLines];
 
-  // Find and log intersections between connector lines
-  console.log('🔍 Analyzing connector line intersections...');
-  findAndLogIntersections(allConnectorLines, 'connector');
+  // Resolve intersections and get separated line arrays
+  console.log('🔍 Analyzing and resolving connector line intersections...');
+  const { originalLines, alternativeLines, hasIntersections } = findAndResolveIntersections(allConnectorLines, 'connector');
 
-  allConnectorLines.forEach(({ from, to }) => {
+  // Draw original lines (non-intersecting) in black
+  originalLines.forEach(({ from, to }) => {
     const line = document.createElementNS(svgNs, 'line');
     line.setAttribute('x1', `${from.x}`);
     line.setAttribute('y1', `${from.y}`);
@@ -145,6 +146,42 @@ export const generateProfessionalMapLayout = async (map, coords, amenities, mapC
     line.setAttribute('opacity', '0.8');
     svg.appendChild(line);
   });
+
+  // Draw alternative lines (resolved intersections) in red
+  alternativeLines.forEach(({ from, to, originalIndex }) => {
+    const line = document.createElementNS(svgNs, 'line');
+    line.setAttribute('x1', `${from.x}`);
+    line.setAttribute('y1', `${from.y}`);
+    line.setAttribute('x2', `${to.x}`);
+    line.setAttribute('y2', `${to.y}`);
+    line.setAttribute('stroke', 'red');
+    line.setAttribute('stroke-width', '2');
+    line.setAttribute('opacity', '0.9');
+    line.setAttribute('stroke-dasharray', '5,3'); // Dashed line to make it more obvious
+    svg.appendChild(line);
+  });
+
+  // Add legend if there are alternative lines
+  if (hasIntersections) {
+    const legend = document.createElement('div');
+    legend.style.cssText = `
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      background: rgba(255, 255, 255, 0.9);
+      padding: 8px;
+      border-radius: 4px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+      font-size: 12px;
+      font-family: Arial, sans-serif;
+      z-index: 1002;
+    `;
+    legend.innerHTML = `
+      <div style="margin-bottom: 4px;"><span style="color: black; font-weight: bold;">━</span> Original lines</div>
+      <div><span style="color: red; font-weight: bold;">┅</span> Resolved intersections</div>
+    `;
+    overlayNode.appendChild(legend);
+  }
 
   overlayNode.appendChild(svg);
 };
